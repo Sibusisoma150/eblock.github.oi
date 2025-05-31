@@ -42,6 +42,7 @@ import {
   TrendingUp,
   Clock,
   Eye,
+  ArrowLeft,
 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { useTheme } from "next-themes"
@@ -244,6 +245,18 @@ function MzansiGossipClub() {
     { type: "sad", emoji: "😢", color: "text-blue-400" },
     { type: "angry", emoji: "😡", color: "text-red-600" },
   ]
+
+  // Time formatting function
+  const getTimeAgo = (date: any) => {
+    const now = new Date()
+    const postDate = new Date(date)
+    const diffInSeconds = Math.floor((now.getTime() - postDate.getTime()) / 1000)
+
+    if (diffInSeconds < 60) return `${diffInSeconds}s ago`
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
+    return `${Math.floor(diffInSeconds / 86400)}d ago`
+  }
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -748,6 +761,15 @@ function MzansiGossipClub() {
       return
     }
 
+    // Check if already friends
+    if (user.friends?.includes(userId)) {
+      toast({
+        title: "Info",
+        description: "You are already friends",
+      })
+      return
+    }
+
     const targetUser = allUsers.find((u) => u.id === userId)
     if (!targetUser) return
 
@@ -905,8 +927,12 @@ function MzansiGossipClub() {
   const handleProfilePicUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
-      const url = URL.createObjectURL(file)
-      setEditingProfile({ ...editingProfile, profilePic: url })
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const result = e.target?.result as string
+        setEditingProfile({ ...editingProfile, profilePic: result })
+      }
+      reader.readAsDataURL(file)
     }
   }
 
@@ -1002,8 +1028,12 @@ function MzansiGossipClub() {
   const handleSongCoverSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
-      const url = URL.createObjectURL(file)
-      setNewSong({ ...newSong, coverArt: file, coverArtPreview: url })
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const result = e.target?.result as string
+        setNewSong({ ...newSong, coverArt: file, coverArtPreview: result })
+      }
+      reader.readAsDataURL(file)
     }
   }
 
@@ -1258,75 +1288,89 @@ function MzansiGossipClub() {
                   <Card className="absolute top-full left-0 mt-2 w-full z-50 max-h-96 overflow-y-auto">
                     <CardContent className="p-2">
                       {searchResults.length > 0 ? (
-                        searchResults.map((searchUser) => (
-                          <div
-                            key={searchUser.id}
-                            className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer"
-                          >
-                            <Link href={`/user/${searchUser.id}`}>
-                              <Avatar className="h-12 w-12">
-                                <AvatarImage src={searchUser.profilePic || "/placeholder.svg"} />
-                                <AvatarFallback>
-                                  <UserIcon className="h-4 w-4" />
-                                </AvatarFallback>
-                              </Avatar>
-                            </Link>
-                            <div className="flex-1">
+                        searchResults.map((searchUser) => {
+                          const isAlreadyFriend = user?.friends?.includes(searchUser.id)
+                          const hasPendingRequest = friendRequests.some(
+                            (req) =>
+                              req.fromUserId === currentUser?.uid &&
+                              req.toUserId === searchUser.id &&
+                              req.status === "pending",
+                          )
+
+                          return (
+                            <div
+                              key={searchUser.id}
+                              className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer"
+                            >
                               <Link href={`/user/${searchUser.id}`}>
-                                <p className="font-semibold hover:text-blue-600">{searchUser.displayName}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {searchUser.gender &&
-                                    `${searchUser.gender.charAt(0).toUpperCase() + searchUser.gender.slice(1)} • `}
-                                  {searchUser.email}
-                                </p>
-                                {searchUser.bio && (
-                                  <p className="text-xs text-muted-foreground truncate">{searchUser.bio}</p>
-                                )}
+                                <Avatar className="h-12 w-12">
+                                  <AvatarImage src={searchUser.profilePic || "/placeholder.svg"} />
+                                  <AvatarFallback>
+                                    <UserIcon className="h-4 w-4" />
+                                  </AvatarFallback>
+                                </Avatar>
                               </Link>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Users className="h-3 w-3" />
-                                <span className="text-xs text-muted-foreground">
-                                  {searchUser.friends?.length || 0} friends
-                                </span>
-                                {(user?.friends || []).filter((friendId) =>
-                                  (searchUser.friends || []).includes(friendId),
-                                ).length > 0 && (
-                                  <span className="text-xs text-blue-600">
-                                    •{" "}
-                                    {
-                                      (user?.friends || []).filter((friendId) =>
-                                        (searchUser.friends || []).includes(friendId),
-                                      ).length
-                                    }{" "}
-                                    mutual friends
+                              <div className="flex-1">
+                                <Link href={`/user/${searchUser.id}`}>
+                                  <p className="font-semibold hover:text-blue-600">{searchUser.displayName}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {searchUser.gender &&
+                                      `${searchUser.gender.charAt(0).toUpperCase() + searchUser.gender.slice(1)} • `}
+                                    {searchUser.email}
+                                  </p>
+                                  {searchUser.bio && (
+                                    <p className="text-xs text-muted-foreground truncate">{searchUser.bio}</p>
+                                  )}
+                                </Link>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Users className="h-3 w-3" />
+                                  <span className="text-xs text-muted-foreground">
+                                    {searchUser.friends?.length || 0} friends
                                   </span>
+                                  {(user?.friends || []).filter((friendId) =>
+                                    (searchUser.friends || []).includes(friendId),
+                                  ).length > 0 && (
+                                    <span className="text-xs text-blue-600">
+                                      •{" "}
+                                      {
+                                        (user?.friends || []).filter((friendId) =>
+                                          (searchUser.friends || []).includes(friendId),
+                                        ).length
+                                      }{" "}
+                                      mutual friends
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex gap-1">
+                                {!isAlreadyFriend && !hasPendingRequest && (
+                                  <Button
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      sendFriendRequest(searchUser.id)
+                                    }}
+                                  >
+                                    <UserPlus className="h-3 w-3 mr-1" />
+                                    Add Friend
+                                  </Button>
                                 )}
+                                {isAlreadyFriend && <Badge variant="secondary">Friends</Badge>}
+                                {hasPendingRequest && <Badge variant="outline">Request Sent</Badge>}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    startChat(searchUser)
+                                  }}
+                                >
+                                  <MessageSquare className="h-3 w-3" />
+                                </Button>
                               </div>
                             </div>
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  sendFriendRequest(searchUser.id)
-                                }}
-                              >
-                                <UserPlus className="h-3 w-3 mr-1" />
-                                Add
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  startChat(searchUser)
-                                }}
-                              >
-                                <MessageSquare className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))
+                          )
+                        })
                       ) : (
                         <p className="text-sm text-muted-foreground text-center p-4">No users found</p>
                       )}
@@ -1459,104 +1503,120 @@ function MzansiGossipClub() {
         </div>
       </div>
 
-      {/* Friend Requests Modal */}
+      {/* Friend Requests Modal - Full Screen */}
       {showFriendRequests && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-          <Card className="w-full max-w-md m-4">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Friend Requests</CardTitle>
+        <div className="fixed inset-0 bg-white dark:bg-gray-900 z-50 overflow-y-auto">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center gap-4 mb-6">
               <Button variant="ghost" size="sm" onClick={() => setShowFriendRequests(false)}>
-                <X className="h-4 w-4" />
+                <ArrowLeft className="h-4 w-4" />
               </Button>
-            </CardHeader>
-            <CardContent className="space-y-3 max-h-96 overflow-y-auto">
+              <h1 className="text-2xl font-bold">Friend Requests</h1>
+            </div>
+            <div className="space-y-4">
               {friendRequests
                 .filter((req) => req.status === "pending" && req.toUserId === currentUser?.uid)
                 .map((request) => (
-                  <div key={request.id} className="flex items-center gap-3 p-3 border rounded-lg">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={request.fromUser.profilePic || "/placeholder.svg"} />
-                      <AvatarFallback>
-                        <UserIcon className="h-4 w-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <p className="font-semibold">{request.fromUser.displayName}</p>
-                      <p className="text-sm text-muted-foreground">{request.fromUser.email}</p>
-                      {request.mutualFriends && request.mutualFriends > 0 && (
-                        <p className="text-xs text-blue-600">{request.mutualFriends} mutual friends</p>
-                      )}
-                      <div className="flex gap-2 mt-2">
-                        <Button size="sm" onClick={() => acceptFriendRequest(request.id)}>
-                          Confirm
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => declineFriendRequest(request.id)}>
-                          Delete
-                        </Button>
+                  <Card key={request.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-16 w-16">
+                          <AvatarImage src={request.fromUser.profilePic || "/placeholder.svg"} />
+                          <AvatarFallback>
+                            <UserIcon className="h-8 w-8" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <p className="font-semibold text-lg">{request.fromUser.displayName}</p>
+                          <p className="text-muted-foreground">{request.fromUser.email}</p>
+                          {request.mutualFriends && request.mutualFriends > 0 && (
+                            <p className="text-sm text-blue-600">{request.mutualFriends} mutual friends</p>
+                          )}
+                          <div className="flex gap-3 mt-3">
+                            <Button onClick={() => acceptFriendRequest(request.id)}>Confirm</Button>
+                            <Button variant="outline" onClick={() => declineFriendRequest(request.id)}>
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
               {friendRequests.filter((req) => req.status === "pending" && req.toUserId === currentUser?.uid).length ===
-                0 && <p className="text-sm text-muted-foreground text-center py-8">No pending requests</p>}
-            </CardContent>
-          </Card>
+                0 && (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-muted-foreground">No pending friend requests</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Notifications Modal */}
+      {/* Notifications Modal - Full Screen */}
       {showNotifications && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-          <Card className="w-full max-w-md m-4">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Notifications</CardTitle>
+        <div className="fixed inset-0 bg-white dark:bg-gray-900 z-50 overflow-y-auto">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center gap-4 mb-6">
               <Button variant="ghost" size="sm" onClick={() => setShowNotifications(false)}>
-                <X className="h-4 w-4" />
+                <ArrowLeft className="h-4 w-4" />
               </Button>
-            </CardHeader>
-            <CardContent className="space-y-3 max-h-96 overflow-y-auto">
+              <h1 className="text-2xl font-bold">Notifications</h1>
+            </div>
+            <div className="space-y-4">
               {notifications.map((notif) => (
-                <div
+                <Card
                   key={notif.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 ${
-                    !notif.read ? "bg-blue-50 dark:bg-blue-900/20" : ""
+                  className={`cursor-pointer hover:shadow-md transition-shadow ${
+                    !notif.read ? "border-blue-200 bg-blue-50 dark:bg-blue-900/20" : ""
                   }`}
                   onClick={() => markNotificationAsRead(notif.id)}
                 >
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={notif.fromUser.profilePic || "/placeholder.svg"} />
-                    <AvatarFallback>
-                      <UserIcon className="h-4 w-4" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <p className="text-sm">
-                      <span className="font-semibold">{notif.fromUser.displayName}</span> {notif.message}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{new Date(notif.createdAt).toLocaleDateString()}</p>
-                  </div>
-                  {!notif.read && <div className="w-2 h-2 bg-blue-600 rounded-full"></div>}
-                </div>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-12 w-12">
+                        <AvatarImage src={notif.fromUser.profilePic || "/placeholder.svg"} />
+                        <AvatarFallback>
+                          <UserIcon className="h-6 w-6" />
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <p className="text-sm">
+                          <span className="font-semibold">{notif.fromUser.displayName}</span> {notif.message}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{getTimeAgo(notif.createdAt)}</p>
+                      </div>
+                      {!notif.read && <div className="w-3 h-3 bg-blue-600 rounded-full"></div>}
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
               {notifications.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-8">No notifications</p>
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-muted-foreground">No notifications</p>
+                  </CardContent>
+                </Card>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Inbox Modal */}
+      {/* Inbox Modal - Full Screen */}
       {showInbox && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-          <Card className="w-full max-w-md m-4">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Chats</CardTitle>
+        <div className="fixed inset-0 bg-white dark:bg-gray-900 z-50 overflow-y-auto">
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center gap-4 mb-6">
               <Button variant="ghost" size="sm" onClick={() => setShowInbox(false)}>
-                <X className="h-4 w-4" />
+                <ArrowLeft className="h-4 w-4" />
               </Button>
-            </CardHeader>
-            <CardContent className="space-y-3 max-h-96 overflow-y-auto">
+              <h1 className="text-2xl font-bold">Chats</h1>
+            </div>
+            <div className="space-y-4">
               {user?.friends?.map((friendId) => {
                 const friend = allUsers.find((u) => u.id === friendId)
                 if (!friend) return null
@@ -1571,41 +1631,51 @@ function MzansiGossipClub() {
                   .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
 
                 return (
-                  <div
+                  <Card
                     key={friendId}
-                    className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg cursor-pointer"
+                    className="cursor-pointer hover:shadow-md transition-shadow"
                     onClick={() => startChat(friend)}
                   >
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={friend.profilePic || "/placeholder.svg"} />
-                      <AvatarFallback>
-                        <UserIcon className="h-4 w-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold">{friend.displayName}</p>
-                        {unreadCount > 0 && <Badge className="h-5 w-5 rounded-full p-0 text-xs">{unreadCount}</Badge>}
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-16 w-16">
+                          <AvatarImage src={friend.profilePic || "/placeholder.svg"} />
+                          <AvatarFallback>
+                            <UserIcon className="h-8 w-8" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <p className="font-semibold text-lg">{friend.displayName}</p>
+                            {unreadCount > 0 && (
+                              <Badge className="h-6 w-6 rounded-full p-0 text-xs">{unreadCount}</Badge>
+                            )}
+                          </div>
+                          {lastMessage && (
+                            <p className="text-muted-foreground truncate">
+                              {lastMessage.fromUserId === currentUser?.uid ? "You: " : ""}
+                              {lastMessage.message}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {lastMessage ? getTimeAgo(lastMessage.createdAt) : "No messages"}
+                          </p>
+                        </div>
+                        {friend.isOnline && <div className="w-4 h-4 bg-green-500 rounded-full"></div>}
                       </div>
-                      {lastMessage && (
-                        <p className="text-sm text-muted-foreground truncate">
-                          {lastMessage.fromUserId === currentUser?.uid ? "You: " : ""}
-                          {lastMessage.message}
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        {lastMessage ? new Date(lastMessage.createdAt).toLocaleDateString() : "No messages"}
-                      </p>
-                    </div>
-                    {friend.isOnline && <div className="w-3 h-3 bg-green-500 rounded-full"></div>}
-                  </div>
+                    </CardContent>
+                  </Card>
                 )
               })}
               {(!user?.friends || user.friends.length === 0) && (
-                <p className="text-sm text-muted-foreground text-center py-8">No friends to chat with</p>
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-muted-foreground">No friends to chat with</p>
+                  </CardContent>
+                </Card>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1986,7 +2056,7 @@ function MzansiGossipClub() {
           </DialogHeader>
           <div className="space-y-4">
             <Textarea
-              placeholder="What's on your mind?"
+              placeholder="Share Your Gossip With Us"
               value={editCaption}
               onChange={(e) => setEditCaption(e.target.value)}
             />
@@ -2002,7 +2072,59 @@ function MzansiGossipClub() {
         </DialogContent>
       </Dialog>
 
-      <div className="container mx-auto px-4 py-6">
+      {/* Fixed Music Player at Bottom */}
+      {currentSong && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t p-4 z-40">
+          <div className="container mx-auto">
+            <div className="flex items-center gap-4">
+              <img
+                src={currentSong.coverArt || "/placeholder.svg"}
+                alt={currentSong.title}
+                className="w-12 h-12 rounded-lg object-cover"
+              />
+              <div className="flex-1">
+                <h4 className="font-semibold text-sm">{currentSong.title}</h4>
+                <p className="text-xs text-muted-foreground">{currentSong.artist}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <Slider
+                    value={[currentTime]}
+                    max={currentSong.duration}
+                    step={1}
+                    onValueChange={handleSeek}
+                    className="flex-1"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {formatTime(currentTime)} / {formatTime(currentSong.duration)}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={togglePlayPause}>
+                  {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </Button>
+                <div className="flex items-center gap-1">
+                  <Volume2 className="h-3 w-3" />
+                  <Slider
+                    value={[volume]}
+                    max={100}
+                    step={1}
+                    onValueChange={(value) => setVolume(value[0])}
+                    className="w-16"
+                  />
+                </div>
+              </div>
+            </div>
+            <audio
+              ref={audioRef}
+              src={currentSong.audioUrl}
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={() => setIsPlaying(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className={`container mx-auto px-4 py-6 ${currentSong ? "pb-24" : ""}`}>
         {currentPage === "home" && (
           <div className="max-w-2xl mx-auto space-y-6">
             {/* Create Post */}
@@ -2016,7 +2138,7 @@ function MzansiGossipClub() {
                     </AvatarFallback>
                   </Avatar>
                   <Textarea
-                    placeholder="What's on your mind?"
+                    placeholder="Share Your Gossip With Us"
                     value={caption}
                     onChange={(e) => setCaption(e.target.value)}
                     className="flex-1"
@@ -2092,9 +2214,7 @@ function MzansiGossipClub() {
                         </Avatar>
                         <div>
                           <p className="font-semibold">{post.user.displayName}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {new Date(post.createdAt).toLocaleDateString()}
-                          </p>
+                          <p className="text-sm text-muted-foreground">{getTimeAgo(post.createdAt)}</p>
                         </div>
                       </div>
                     </Link>
@@ -2167,6 +2287,16 @@ function MzansiGossipClub() {
                     </div>
                   )}
 
+                  {/* View Count for Videos */}
+                  {post.mediaType === "video" && (
+                    <div className="mb-2">
+                      <span className="text-sm text-muted-foreground flex items-center gap-1">
+                        <Eye className="h-3 w-3" />
+                        {post.viewCount || 0} views
+                      </span>
+                    </div>
+                  )}
+
                   {/* Reactions Display */}
                   {post.reactions.length > 0 && (
                     <div className="flex items-center gap-2 mb-2">
@@ -2222,9 +2352,6 @@ function MzansiGossipClub() {
                         Share
                       </Button>
                     </div>
-                    {post.mediaType === "video" && (
-                      <span className="text-sm text-muted-foreground">{post.viewCount || 0} views</span>
-                    )}
                   </div>
 
                   {/* Comments Section */}
@@ -2280,6 +2407,162 @@ function MzansiGossipClub() {
           </div>
         )}
 
+        {currentPage === "videos" && (
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl font-bold mb-6">Videos</h2>
+            <div className="grid gap-6">
+              {posts
+                .filter((post) => post.mediaType === "video")
+                .map((post) => (
+                  <Card key={post.id}>
+                    <CardContent className="p-4">
+                      <Link href={`/user/${post.user.id}`}>
+                        <div className="flex items-center gap-3 mb-4 cursor-pointer">
+                          <Avatar>
+                            <AvatarImage src={post.user.profilePic || "/placeholder.svg"} />
+                            <AvatarFallback>
+                              <UserIcon className="h-4 w-4" />
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-semibold">{post.user.displayName}</p>
+                            <p className="text-sm text-muted-foreground">{getTimeAgo(post.createdAt)}</p>
+                          </div>
+                        </div>
+                      </Link>
+                      {post.caption && <p className="mb-4">{post.caption}</p>}
+                      <video
+                        controls
+                        className="w-full rounded-lg mb-4"
+                        onPlay={() => {
+                          // Increment view count when video starts playing
+                          const updatedPosts = posts.map((p) =>
+                            p.id === post.id ? { ...p, viewCount: (p.viewCount || 0) + 1 } : p,
+                          )
+                          setPosts(updatedPosts)
+                        }}
+                      >
+                        <source src={post.mediaURL} />
+                      </video>
+
+                      {/* View Count Above Reactions */}
+                      <div className="mb-3">
+                        <span className="text-sm text-muted-foreground flex items-center gap-1">
+                          <Eye className="h-3 w-3" />
+                          {post.viewCount || 0} views
+                        </span>
+                      </div>
+
+                      {/* Reactions Display */}
+                      {post.reactions.length > 0 && (
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="flex -space-x-1">
+                            {Array.from(new Set(post.reactions.map((r) => r.emoji))).map((emoji, index) => (
+                              <span key={index} className="text-sm bg-white dark:bg-gray-800 rounded-full border p-1">
+                                {emoji}
+                              </span>
+                            ))}
+                          </div>
+                          <span className="text-sm text-muted-foreground">{post.reactions.length}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-3 border-t">
+                        <div className="flex gap-4">
+                          <div className="relative">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setShowReactions({ ...showReactions, [post.id]: !showReactions[post.id] })}
+                            >
+                              <Heart
+                                className={`h-4 w-4 mr-2 ${
+                                  post.reactions.some((r) => r.userId === currentUser?.uid)
+                                    ? "fill-red-500 text-red-500"
+                                    : ""
+                                }`}
+                              />
+                              Like ({post.reactions.length})
+                            </Button>
+                            {showReactions[post.id] && (
+                              <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 border rounded-lg shadow-lg p-2 flex gap-1 z-10">
+                                {reactionEmojis.map((reaction) => (
+                                  <button
+                                    key={reaction.type}
+                                    className="text-lg hover:scale-125 transition-transform"
+                                    onClick={() => handleReaction(post.id, reaction.type)}
+                                  >
+                                    {reaction.emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <Button variant="ghost" size="sm">
+                            <MessageCircle className="h-4 w-4 mr-2" />
+                            Comment ({post.comments.length})
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleShare(post)}>
+                            <Share className="h-4 w-4 mr-2" />
+                            Share
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Comments Section */}
+                      {post.comments.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {post.comments.map((comment) => (
+                            <div key={comment.id} className="flex items-start gap-2">
+                              <Avatar className="h-6 w-6">
+                                <AvatarImage src={comment.profilePic || "/placeholder.svg"} />
+                                <AvatarFallback>
+                                  <UserIcon className="h-3 w-3" />
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2 flex-1">
+                                <p className="font-semibold text-sm">{comment.displayName}</p>
+                                <p className="text-sm">{comment.text}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add Comment */}
+                      <div className="flex items-center gap-2 mt-4">
+                        <Avatar className="h-6 w-6">
+                          <AvatarImage src={user?.profilePic || "/placeholder.svg"} />
+                          <AvatarFallback>
+                            <UserIcon className="h-3 w-3" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <Input
+                          placeholder="Write a comment..."
+                          value={commentInputs[post.id] || ""}
+                          onChange={(e) => setCommentInputs({ ...commentInputs, [post.id]: e.target.value })}
+                          onKeyPress={(e) => e.key === "Enter" && handleComment(post.id)}
+                          className="flex-1"
+                        />
+                        <Button size="sm" onClick={() => handleComment(post.id)}>
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              {posts.filter((post) => post.mediaType === "video").length === 0 && (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <Video className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">No videos uploaded yet. Share your first video!</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        )}
+
         {currentPage === "music" && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex items-center justify-between">
@@ -2289,58 +2572,6 @@ function MzansiGossipClub() {
                 Upload Song
               </Button>
             </div>
-
-            {/* Current Playing Song */}
-            {currentSong && (
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-4">
-                    <img
-                      src={currentSong.coverArt || "/placeholder.svg"}
-                      alt={currentSong.title}
-                      className="w-16 h-16 rounded-lg object-cover"
-                    />
-                    <div className="flex-1">
-                      <h3 className="font-semibold">{currentSong.title}</h3>
-                      <p className="text-sm text-muted-foreground">{currentSong.artist}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Button size="sm" onClick={togglePlayPause}>
-                          {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                        </Button>
-                        <div className="flex-1">
-                          <Slider
-                            value={[currentTime]}
-                            max={currentSong.duration}
-                            step={1}
-                            onValueChange={handleSeek}
-                            className="w-full"
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {formatTime(currentTime)} / {formatTime(currentSong.duration)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Volume2 className="h-4 w-4" />
-                      <Slider
-                        value={[volume]}
-                        max={100}
-                        step={1}
-                        onValueChange={(value) => setVolume(value[0])}
-                        className="w-20"
-                      />
-                    </div>
-                  </div>
-                  <audio
-                    ref={audioRef}
-                    src={currentSong.audioUrl}
-                    onTimeUpdate={handleTimeUpdate}
-                    onEnded={() => setIsPlaying(false)}
-                  />
-                </CardContent>
-              </Card>
-            )}
 
             {/* Trending Songs */}
             {getTrendingSongs().length > 0 && (
@@ -2548,80 +2779,6 @@ function MzansiGossipClub() {
           </div>
         )}
 
-        {currentPage === "videos" && (
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-6">Videos</h2>
-            <div className="grid gap-6">
-              {posts
-                .filter((post) => post.mediaType === "video")
-                .map((post) => (
-                  <Card key={post.id}>
-                    <CardContent className="p-4">
-                      <Link href={`/user/${post.user.id}`}>
-                        <div className="flex items-center gap-3 mb-4 cursor-pointer">
-                          <Avatar>
-                            <AvatarImage src={post.user.profilePic || "/placeholder.svg"} />
-                            <AvatarFallback>
-                              <UserIcon className="h-4 w-4" />
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-semibold">{post.user.displayName}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {new Date(post.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                      </Link>
-                      {post.caption && <p className="mb-4">{post.caption}</p>}
-                      <video
-                        controls
-                        className="w-full rounded-lg mb-4"
-                        onPlay={() => {
-                          // Increment view count when video starts playing
-                          const updatedPosts = posts.map((p) =>
-                            p.id === post.id ? { ...p, viewCount: (p.viewCount || 0) + 1 } : p,
-                          )
-                          setPosts(updatedPosts)
-                        }}
-                      >
-                        <source src={post.mediaURL} />
-                      </video>
-                      <div className="flex items-center justify-between">
-                        <div className="flex gap-4">
-                          <Button variant="ghost" size="sm" onClick={() => handleReaction(post.id, "like")}>
-                            <Heart className="h-4 w-4 mr-2" />
-                            Like ({post.reactions.length})
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <MessageCircle className="h-4 w-4 mr-2" />
-                            Comment ({post.comments.length})
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleShare(post)}>
-                            <Share className="h-4 w-4 mr-2" />
-                            Share
-                          </Button>
-                        </div>
-                        <span className="text-sm text-muted-foreground flex items-center gap-1">
-                          <Eye className="h-3 w-3" />
-                          {post.viewCount || 0} views
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              {posts.filter((post) => post.mediaType === "video").length === 0 && (
-                <Card>
-                  <CardContent className="p-6 text-center">
-                    <Video className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground">No videos uploaded yet. Share your first video!</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
-        )}
-
         {currentPage === "profile" && (
           <div className="max-w-4xl mx-auto space-y-6">
             {/* Cover Photo */}
@@ -2737,7 +2894,7 @@ function MzansiGossipClub() {
                           )}
                           {post.caption && <p className="text-sm mb-2 line-clamp-2">{post.caption}</p>}
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{new Date(post.createdAt).toLocaleDateString()}</span>
+                            <span>{getTimeAgo(post.createdAt)}</span>
                             <div className="flex gap-2">
                               <span>{post.reactions.length} ❤️</span>
                               <span>{post.comments.length} 💬</span>
