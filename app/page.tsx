@@ -1,56 +1,68 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import {
-  MessageCircle,
-  Share2,
-  Moon,
-  Sun,
   UserIcon,
-  Video,
-  ImageIcon,
-  X,
   Bell,
   MessageSquare,
   UserPlus,
   Home,
   Newspaper,
   Play,
-  Plus,
   Search,
-  ThumbsUp,
-  Send,
-  MoreHorizontal,
   Music,
-  Users,
-  Eye,
+  Video,
+  ImageIcon,
+  X,
+  Heart,
+  MessageCircle,
+  Share,
+  MoreHorizontal,
+  Plus,
+  Send,
   Pause,
-  SkipBack,
-  SkipForward,
   Volume2,
-  Download,
-  Phone,
-  VideoIcon,
+  Upload,
+  Edit,
+  Camera,
+  Users,
 } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
 interface UserType {
   id: string
   email: string
   displayName: string
   profilePic: string
+  bio?: string
+  interests?: string
   isOnline?: boolean
   friends?: string[]
+  createdAt?: any
+}
+
+interface Post {
+  id: string
+  userId: string
+  caption: string
+  mediaURL: string
+  mediaType: "image" | "video" | ""
+  reactions: Reaction[]
+  comments: Comment[]
+  createdAt: any
+  user: UserType
+  viewCount?: number
 }
 
 interface Reaction {
@@ -65,29 +77,7 @@ interface Comment {
   userId: string
   displayName: string
   profilePic: string
-  createdAt: Date
-}
-
-interface Post {
-  id: string
-  userId: string
-  caption: string
-  mediaURL: string
-  mediaType: "image" | "video" | ""
-  reactions: Reaction[]
-  comments: Comment[]
-  createdAt: Date
-  user: UserType
-  viewCount?: number
-}
-
-interface Story {
-  id: string
-  userId: string
-  mediaURL: string
-  mediaType: "image" | "video"
-  createdAt: Date
-  user: UserType
+  createdAt: any
 }
 
 interface FriendRequest {
@@ -97,6 +87,7 @@ interface FriendRequest {
   fromUser: UserType
   status: "pending" | "accepted" | "declined"
   mutualFriends?: number
+  createdAt: any
 }
 
 interface ChatMessage {
@@ -104,7 +95,7 @@ interface ChatMessage {
   fromUserId: string
   toUserId: string
   message: string
-  createdAt: Date
+  createdAt: any
   read: boolean
 }
 
@@ -115,7 +106,7 @@ interface Notification {
   fromUser: UserType
   postId?: string
   message: string
-  createdAt: Date
+  createdAt: any
   read: boolean
 }
 
@@ -128,6 +119,9 @@ interface Song {
   audioUrl: string
   duration: number
   genre: string
+  userId: string
+  user: UserType
+  createdAt: any
 }
 
 // Data persistence helpers
@@ -145,52 +139,64 @@ const loadFromStorage = (key: string, defaultValue: any) => {
   return defaultValue
 }
 
-export default function MzansiGossipClub() {
-  const [darkMode, setDarkMode] = useState(false)
+function MzansiGossipClub() {
+  const { toast } = useToast()
+  const [currentUser, setCurrentUser] = useState<any>(null)
   const [user, setUser] = useState<UserType | null>(null)
-  const [currentPage, setCurrentPage] = useState<"home" | "news" | "profile" | "music">("home")
+  const [currentPage, setCurrentPage] = useState<"home" | "news" | "profile" | "music" | "videos">("home")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [displayName, setDisplayName] = useState("")
+  const [isSignUp, setIsSignUp] = useState(false)
   const [posts, setPosts] = useState<Post[]>([])
-  const [stories, setStories] = useState<Story[]>([])
   const [caption, setCaption] = useState("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string>("")
-  const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({})
-  const [showReactions, setShowReactions] = useState<{ [key: string]: boolean }>({})
-  const [showNewsReactions, setShowNewsReactions] = useState<{ [key: string]: boolean }>({})
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [showFriendRequests, setShowFriendRequests] = useState(false)
-  const [showChat, setShowChat] = useState(false)
-  const [selectedChatUser, setSelectedChatUser] = useState<UserType | null>(null)
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [chatInput, setChatInput] = useState("")
-  const [notification, setNotification] = useState("")
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const profilePicInputRef = useRef<HTMLInputElement>(null)
-  const storyInputRef = useRef<HTMLInputElement>(null)
+  const [showInbox, setShowInbox] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<UserType[]>([])
   const [showSearch, setShowSearch] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [showProfileEdit, setShowProfileEdit] = useState(false)
-  const [editingProfile, setEditingProfile] = useState({ displayName: "", profilePic: "" })
-  const [showUserProfile, setShowUserProfile] = useState<UserType | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [unreadMessages, setUnreadMessages] = useState<{ [userId: string]: number }>({})
   const [allUsers, setAllUsers] = useState<UserType[]>([])
-  const [showInbox, setShowInbox] = useState(false)
-  const [activeChats, setActiveChats] = useState<UserType[]>([])
-  const [newsComments, setNewsComments] = useState<{ [key: string]: Comment[] }>({})
-  const [newsReactions, setNewsReactions] = useState<{ [key: string]: Reaction[] }>({})
-  const [newsCommentInputs, setNewsCommentInputs] = useState<{ [key: string]: string }>({})
-  const [newsViewCounts, setNewsViewCounts] = useState<{ [key: string]: number }>({})
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [selectedChatUser, setSelectedChatUser] = useState<UserType | null>(null)
+  const [chatInput, setChatInput] = useState("")
+  const [showChat, setShowChat] = useState(false)
+  const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({})
+  const [showReactions, setShowReactions] = useState<{ [key: string]: boolean }>({})
   const [songs, setSongs] = useState<Song[]>([])
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [volume, setVolume] = useState(80)
+  const [showAddSong, setShowAddSong] = useState(false)
+  const [newSong, setNewSong] = useState({
+    title: "",
+    artist: "",
+    album: "",
+    genre: "",
+    audioFile: null as File | null,
+    coverArt: null as File | null,
+    coverArtPreview: "",
+  })
+  const [showProfileEdit, setShowProfileEdit] = useState(false)
+  const [editingProfile, setEditingProfile] = useState({
+    displayName: "",
+    bio: "",
+    interests: "",
+    profilePic: "",
+  })
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const profilePicInputRef = useRef<HTMLInputElement>(null)
+  const songFileInputRef = useRef<HTMLInputElement>(null)
+  const songCoverInputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const [unreadMessages, setUnreadMessages] = useState<{ [userId: string]: number }>({})
 
   const reactionEmojis = [
     { type: "like", emoji: "👍", color: "text-blue-500" },
@@ -201,212 +207,65 @@ export default function MzansiGossipClub() {
     { type: "angry", emoji: "😡", color: "text-red-600" },
   ]
 
-  // Mock users
-  const mockUsers: UserType[] = [
-    {
-      id: "user1",
-      email: "thabo@example.com",
-      displayName: "Thabo M",
-      profilePic: "/placeholder.svg?height=40&width=40",
-      isOnline: true,
-      friends: ["user2", "user3"],
-    },
-    {
-      id: "user2",
-      email: "nomsa@example.com",
-      displayName: "Nomsa K",
-      profilePic: "/placeholder.svg?height=40&width=40",
-      isOnline: false,
-      friends: ["user1", "user3"],
-    },
-    {
-      id: "user3",
-      email: "sipho@example.com",
-      displayName: "Sipho D",
-      profilePic: "/placeholder.svg?height=40&width=40",
-      isOnline: true,
-      friends: ["user1", "user2"],
-    },
-    {
-      id: "user4",
-      email: "lerato@example.com",
-      displayName: "Lerato M",
-      profilePic: "/placeholder.svg?height=40&width=40",
-      isOnline: true,
-      friends: ["user2"],
-    },
-    {
-      id: "user5",
-      email: "tumi@example.com",
-      displayName: "Tumi N",
-      profilePic: "/placeholder.svg?height=40&width=40",
-      isOnline: false,
-      friends: ["user3"],
-    },
-  ]
-
-  // Mock celebrity news
-  const celebrityNews = [
-    {
-      id: "news1",
-      title: "Bonang Matheba's New Business Venture",
-      description: "The media personality announces her latest investment in tech startups",
-      thumbnail: "/placeholder.svg?height=200&width=300",
-      videoUrl: "/placeholder.svg?height=400&width=600",
-    },
-    {
-      id: "news2",
-      title: "Cassper Nyovest Studio Session",
-      description: "Behind the scenes of his latest album recording",
-      thumbnail: "/placeholder.svg?height=200&width=300",
-      videoUrl: "/placeholder.svg?height=400&width=600",
-    },
-  ]
-
-  // Mock video shorts
-  const videoShorts = [
-    {
-      id: "short1",
-      title: "Dance Challenge",
-      thumbnail: "/placeholder.svg?height=300&width=200",
-      user: mockUsers[0],
-    },
-    {
-      id: "short2",
-      title: "Comedy Skit",
-      thumbnail: "/placeholder.svg?height=300&width=200",
-      user: mockUsers[1],
-    },
-  ]
-
-  // Mock songs
-  const mockSongs: Song[] = [
-    {
-      id: "song1",
-      title: "Jerusalema",
-      artist: "Master KG ft. Nomcebo",
-      album: "Jerusalema Album",
-      coverArt: "/placeholder.svg?height=300&width=300",
-      audioUrl: "https://example.com/audio/jerusalema.mp3",
-      duration: 240,
-      genre: "Afro House",
-    },
-    {
-      id: "song2",
-      title: "Osama",
-      artist: "Zakes Bantwini",
-      album: "Ghetto King",
-      coverArt: "/placeholder.svg?height=300&width=300",
-      audioUrl: "https://example.com/audio/osama.mp3",
-      duration: 320,
-      genre: "Afro House",
-    },
-    {
-      id: "song3",
-      title: "Dali",
-      artist: "Daliwonga",
-      album: "Daliwonga",
-      coverArt: "/placeholder.svg?height=300&width=300",
-      audioUrl: "https://example.com/audio/dali.mp3",
-      duration: 280,
-      genre: "Amapiano",
-    },
-    {
-      id: "song4",
-      title: "Asibe Happy",
-      artist: "Kabza De Small & DJ Maphorisa",
-      album: "Scorpion Kings",
-      coverArt: "/placeholder.svg?height=300&width=300",
-      audioUrl: "https://example.com/audio/asibehappy.mp3",
-      duration: 310,
-      genre: "Amapiano",
-    },
-  ]
-
-  const mockPosts: Post[] = []
-  const mockStories: Story[] = []
-  const mockFriendRequests: FriendRequest[] = [
-    {
-      id: "req1",
-      fromUserId: "user2",
-      toUserId: "current-user",
-      fromUser: mockUsers[1],
-      status: "pending",
-      mutualFriends: 3,
-    },
-    {
-      id: "req2",
-      fromUserId: "user3",
-      toUserId: "current-user",
-      fromUser: mockUsers[2],
-      status: "pending",
-      mutualFriends: 1,
-    },
-  ]
-  const mockNotifications: Notification[] = []
-  const mockChatMessages: ChatMessage[] = [
-    {
-      id: "msg1",
-      fromUserId: "user1",
-      toUserId: "current-user",
-      message: "Hey, how are you?",
-      createdAt: new Date(Date.now() - 3600000),
-      read: false,
-    },
-    {
-      id: "msg2",
-      fromUserId: "user2",
-      toUserId: "current-user",
-      message: "Did you see the latest gossip?",
-      createdAt: new Date(Date.now() - 7200000),
-      read: false,
-    },
-  ]
-
+  // Load data from localStorage on mount
   useEffect(() => {
-    // Load data from localStorage
+    const savedUser = loadFromStorage("currentUser", null)
     const savedPosts = loadFromStorage("posts", [])
-    const savedStories = loadFromStorage("stories", [])
-    const savedUsers = loadFromStorage("allUsers", mockUsers)
-    const savedFriendRequests = loadFromStorage("friendRequests", mockFriendRequests)
+    const savedUsers = loadFromStorage("allUsers", [])
+    const savedFriendRequests = loadFromStorage("friendRequests", [])
     const savedNotifications = loadFromStorage("notifications", [])
-    const savedChatMessages = loadFromStorage("chatMessages", mockChatMessages)
-    const savedNewsComments = loadFromStorage("newsComments", {})
-    const savedNewsReactions = loadFromStorage("newsReactions", {})
-    const savedNewsViewCounts = loadFromStorage("newsViewCounts", {})
-    const savedDarkMode = loadFromStorage("darkMode", false)
+    const savedChatMessages = loadFromStorage("chatMessages", [])
+    const savedSongs = loadFromStorage("songs", [])
 
-    // Initialize with saved data or mock data
-    setPosts(savedPosts.length > 0 ? savedPosts : mockPosts)
-    setStories(savedStories.length > 0 ? savedStories : mockStories)
+    if (savedUser) {
+      setUser(savedUser)
+      setCurrentUser({ uid: savedUser.id, email: savedUser.email })
+    }
+    setPosts(savedPosts)
     setAllUsers(savedUsers)
     setFriendRequests(savedFriendRequests)
-    setNotifications(savedNotifications.length > 0 ? savedNotifications : mockNotifications)
+    setNotifications(savedNotifications)
     setChatMessages(savedChatMessages)
-    setNewsComments(savedNewsComments)
-    setNewsReactions(savedNewsReactions)
-    setNewsViewCounts(savedNewsViewCounts)
-    setDarkMode(savedDarkMode)
-    setSongs(mockSongs)
+    setSongs(savedSongs)
 
     // Calculate unread messages
     const unread: { [userId: string]: number } = {}
     savedChatMessages.forEach((msg: ChatMessage) => {
-      if (msg.toUserId === "current-user" && !msg.read) {
+      if (msg.toUserId === savedUser?.id && !msg.read) {
         unread[msg.fromUserId] = (unread[msg.fromUserId] || 0) + 1
       }
     })
     setUnreadMessages(unread)
+
+    // Initialize demo user if none exists
+    if (!savedUser) {
+      const demoUser: UserType = {
+        id: "demo-user-123",
+        email: "demo@example.com",
+        displayName: "Demo User",
+        profilePic: "/placeholder.svg?height=40&width=40",
+        bio: "Welcome to TheMzansiGossipClub!",
+        interests: "Music, Videos, Social Media",
+        isOnline: true,
+        friends: [],
+        createdAt: new Date(),
+      }
+      setUser(demoUser)
+      setCurrentUser({ uid: demoUser.id, email: demoUser.email })
+      saveToStorage("currentUser", demoUser)
+      saveToStorage("allUsers", [demoUser])
+      setAllUsers([demoUser])
+    }
   }, [])
 
   // Save data whenever it changes
   useEffect(() => {
-    saveToStorage("posts", posts)
-  }, [posts])
+    if (user) saveToStorage("currentUser", user)
+  }, [user])
 
   useEffect(() => {
-    saveToStorage("stories", stories)
-  }, [stories])
+    saveToStorage("posts", posts)
+  }, [posts])
 
   useEffect(() => {
     saveToStorage("allUsers", allUsers)
@@ -425,34 +284,27 @@ export default function MzansiGossipClub() {
   }, [chatMessages])
 
   useEffect(() => {
-    saveToStorage("newsComments", newsComments)
-  }, [newsComments])
-
-  useEffect(() => {
-    saveToStorage("newsReactions", newsReactions)
-  }, [newsReactions])
-
-  useEffect(() => {
-    saveToStorage("newsViewCounts", newsViewCounts)
-  }, [newsViewCounts])
-
-  useEffect(() => {
-    saveToStorage("darkMode", darkMode)
-  }, [darkMode])
+    saveToStorage("songs", songs)
+  }, [songs])
 
   // Audio player controls
   useEffect(() => {
     if (audioRef.current) {
-      if (isPlaying) {
+      if (isPlaying && currentSong) {
         audioRef.current.play().catch((error) => {
           console.error("Error playing audio:", error)
           setIsPlaying(false)
+          toast({
+            title: "Playback Error",
+            description: "Could not play the audio. Please try again.",
+            variant: "destructive",
+          })
         })
       } else {
         audioRef.current.pause()
       }
     }
-  }, [isPlaying, currentSong])
+  }, [isPlaying, currentSong, toast])
 
   useEffect(() => {
     if (audioRef.current) {
@@ -479,222 +331,229 @@ export default function MzansiGossipClub() {
     }
   }
 
-  const showNotificationMessage = (message: string) => {
-    setNotification(message)
-    setTimeout(() => setNotification(""), 3000)
-  }
-
-  const handleLogin = () => {
-    if (!email || !password) {
-      alert("Please enter both email and password.")
+  const handleSignUp = async () => {
+    if (!email || !password || !displayName) {
+      toast({
+        title: "Error",
+        description: "Please fill in all fields",
+        variant: "destructive",
+      })
       return
     }
 
-    const mockUser: UserType = {
-      id: "current-user",
-      email,
-      displayName: email.split("@")[0],
+    setLoading(true)
+
+    const newUser: UserType = {
+      id: `user-${Date.now()}`,
+      email: email,
+      displayName: displayName,
       profilePic: "/placeholder.svg?height=40&width=40",
+      bio: "",
+      interests: "",
       isOnline: true,
       friends: [],
+      createdAt: new Date(),
     }
-    setUser(mockUser)
-    showNotificationMessage("Logged in successfully!")
+
+    setUser(newUser)
+    setCurrentUser({ uid: newUser.id, email: newUser.email })
+    setAllUsers([...allUsers, newUser])
     setEmail("")
     setPassword("")
+    setDisplayName("")
+    setLoading(false)
+
+    toast({
+      description: "Account created successfully!",
+    })
+  }
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      toast({
+        title: "Error",
+        description: "Please enter both email and password",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
+
+    // Find existing user or create new one
+    const existingUser = allUsers.find((u) => u.email === email)
+    if (existingUser) {
+      setUser(existingUser)
+      setCurrentUser({ uid: existingUser.id, email: existingUser.email })
+    } else {
+      const newUser: UserType = {
+        id: `user-${Date.now()}`,
+        email: email,
+        displayName: email.split("@")[0],
+        profilePic: "/placeholder.svg?height=40&width=40",
+        bio: "",
+        interests: "",
+        isOnline: true,
+        friends: [],
+        createdAt: new Date(),
+      }
+      setUser(newUser)
+      setCurrentUser({ uid: newUser.id, email: newUser.email })
+      setAllUsers([...allUsers, newUser])
+    }
+
+    setEmail("")
+    setPassword("")
+    setLoading(false)
+
+    toast({
+      description: "Logged in successfully!",
+    })
+  }
+
+  const handleCreatePost = async () => {
+    if (!currentUser || (!caption.trim() && !selectedFile)) {
+      toast({
+        title: "Error",
+        description: "Please add some content to your post",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const newPost: Post = {
+      id: `post-${Date.now()}`,
+      userId: currentUser.uid,
+      caption,
+      mediaURL: previewUrl || "",
+      mediaType: selectedFile?.type.startsWith("video") ? "video" : selectedFile ? "image" : "",
+      reactions: [],
+      comments: [],
+      createdAt: new Date(),
+      user: user!,
+      viewCount: 0,
+    }
+
+    setPosts([newPost, ...posts])
+    setCaption("")
+    setSelectedFile(null)
+    setPreviewUrl("")
+
+    toast({
+      description: "Post shared successfully!",
+    })
+  }
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      setSelectedFile(file)
+      const url = URL.createObjectURL(file)
+      setPreviewUrl(url)
+    }
   }
 
   const handleReaction = (postId: string, reactionType: string) => {
-    if (!user) return
+    if (!currentUser || !user) return
 
-    setPosts(
-      posts.map((post) => {
-        if (post.id === postId) {
-          const existingReaction = post.reactions.find((r) => r.userId === user.id)
-          const newReactions = post.reactions.filter((r) => r.userId !== user.id)
+    const updatedPosts = posts.map((post) => {
+      if (post.id === postId) {
+        const existingReaction = post.reactions.find((r) => r.userId === currentUser.uid)
+        let newReactions = [...post.reactions]
 
-          if (!existingReaction || existingReaction.type !== reactionType) {
-            const emoji = reactionEmojis.find((r) => r.type === reactionType)?.emoji || "👍"
-            newReactions.push({
-              type: reactionType as any,
-              userId: user.id,
-              emoji,
-            })
+        if (existingReaction && existingReaction.type === reactionType) {
+          // Remove reaction if clicking the same type
+          newReactions = newReactions.filter((r) => r.userId !== currentUser.uid)
+        } else {
+          // Remove existing reaction if any
+          newReactions = newReactions.filter((r) => r.userId !== currentUser.uid)
+          // Add new reaction
+          const emoji = reactionEmojis.find((r) => r.type === reactionType)?.emoji || "👍"
+          newReactions.push({
+            type: reactionType as any,
+            userId: currentUser.uid,
+            emoji,
+          })
+
+          // Create notification if not the user's own post
+          if (post.userId !== currentUser.uid) {
+            const newNotification: Notification = {
+              id: `notif-${Date.now()}`,
+              type: "like",
+              fromUserId: currentUser.uid,
+              fromUser: user,
+              postId,
+              message: `reacted with ${emoji} to your post`,
+              createdAt: new Date(),
+              read: false,
+            }
+            setNotifications([newNotification, ...notifications])
           }
-
-          return { ...post, reactions: newReactions }
         }
-        return post
-      }),
-    )
 
+        return { ...post, reactions: newReactions }
+      }
+      return post
+    })
+
+    setPosts(updatedPosts)
     setShowReactions({ ...showReactions, [postId]: false })
   }
 
-  const handleNewsReaction = (newsId: string, reactionType: string) => {
-    if (!user) return
+  const handleComment = (postId: string) => {
+    if (!currentUser || !user) return
 
-    const currentReactions = newsReactions[newsId] || []
-    const existingReaction = currentReactions.find((r) => r.userId === user.id)
-    const newReactions = currentReactions.filter((r) => r.userId !== user.id)
+    const commentText = commentInputs[postId]?.trim()
+    if (!commentText) return
 
-    if (!existingReaction || existingReaction.type !== reactionType) {
-      const emoji = reactionEmojis.find((r) => r.type === reactionType)?.emoji || "👍"
-      newReactions.push({
-        type: reactionType as any,
-        userId: user.id,
-        emoji,
-      })
+    const newComment: Comment = {
+      id: `comment-${Date.now()}`,
+      text: commentText,
+      userId: currentUser.uid,
+      displayName: user.displayName,
+      profilePic: user.profilePic,
+      createdAt: new Date(),
     }
 
-    setNewsReactions({
-      ...newsReactions,
-      [newsId]: newReactions,
+    const updatedPosts = posts.map((post) => {
+      if (post.id === postId) {
+        const updatedComments = [...post.comments, newComment]
+
+        // Create notification if not the user's own post
+        if (post.userId !== currentUser.uid) {
+          const newNotification: Notification = {
+            id: `notif-${Date.now()}`,
+            type: "comment",
+            fromUserId: currentUser.uid,
+            fromUser: user,
+            postId,
+            message: "commented on your post",
+            createdAt: new Date(),
+            read: false,
+          }
+          setNotifications([newNotification, ...notifications])
+        }
+
+        return { ...post, comments: updatedComments }
+      }
+      return post
     })
 
-    setShowNewsReactions({ ...showNewsReactions, [newsId]: false })
+    setPosts(updatedPosts)
+    setCommentInputs({ ...commentInputs, [postId]: "" })
+    toast({
+      description: "Comment added!",
+    })
   }
 
-  const handleStoryUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file && user) {
-      const newStory: Story = {
-        id: Date.now().toString(),
-        userId: user.id,
-        mediaURL: URL.createObjectURL(file),
-        mediaType: file.type.startsWith("video") ? "video" : "image",
-        createdAt: new Date(),
-        user,
-      }
-      setStories([newStory, ...stories])
-      showNotificationMessage("Story uploaded!")
-    }
-  }
-
-  const handleProfilePicUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file && user) {
-      const imageUrl = URL.createObjectURL(file)
-      setEditingProfile({ ...editingProfile, profilePic: imageUrl })
-    }
-  }
-
-  const acceptFriendRequest = (requestId: string) => {
-    const request = friendRequests.find((req) => req.id === requestId)
-    if (request && user) {
-      // Update friend request status
-      setFriendRequests(friendRequests.map((req) => (req.id === requestId ? { ...req, status: "accepted" } : req)))
-
-      // Update user's friends list
-      const updatedUser = {
-        ...user,
-        friends: [...(user.friends || []), request.fromUserId],
-      }
-      setUser(updatedUser)
-
-      // Update the other user's friends list
-      setAllUsers(
-        allUsers.map((u) => (u.id === request.fromUserId ? { ...u, friends: [...(u.friends || []), user.id] } : u)),
-      )
-
-      // Add notification
-      const newNotification: Notification = {
-        id: Date.now().toString(),
-        type: "friend_accept",
-        fromUserId: user.id,
-        fromUser: user,
-        message: "accepted your friend request",
-        createdAt: new Date(),
-        read: false,
-      }
-      setNotifications([...notifications, newNotification])
-
-      showNotificationMessage("Friend request accepted!")
-    }
-  }
-
-  const sendMessage = () => {
-    if (!chatInput.trim() || !selectedChatUser || !user) return
-
-    const newMessage: ChatMessage = {
-      id: Date.now().toString(),
-      fromUserId: user.id,
-      toUserId: selectedChatUser.id,
-      message: chatInput,
-      createdAt: new Date(),
-      read: false,
-    }
-
-    setChatMessages([...chatMessages, newMessage])
-    setChatInput("")
-  }
-
-  const markMessagesAsRead = (fromUserId: string) => {
-    setChatMessages(
-      chatMessages.map((msg) =>
-        msg.fromUserId === fromUserId && msg.toUserId === user?.id ? { ...msg, read: true } : msg,
-      ),
-    )
-
-    // Update unread count
-    setUnreadMessages({ ...unreadMessages, [fromUserId]: 0 })
-  }
-
-  const handleSearch = (query: string) => {
-    setSearchQuery(query)
-    if (query.trim()) {
-      const results = allUsers.filter(
-        (user) =>
-          user.displayName.toLowerCase().includes(query.toLowerCase()) ||
-          user.email.toLowerCase().includes(query.toLowerCase()),
-      )
-      setSearchResults(results)
-      setShowSearch(true)
-    } else {
-      setShowSearch(false)
-      setSearchResults([])
-    }
-  }
-
-  const handleProfileEdit = () => {
-    if (!user) return
-
-    const updatedUser = { ...user, ...editingProfile }
-    setUser(updatedUser)
-
-    // Update user in allUsers array
-    setAllUsers(allUsers.map((u) => (u.id === user.id ? updatedUser : u)))
-
-    // Update user in posts
-    setPosts(posts.map((post) => (post.userId === user.id ? { ...post, user: updatedUser } : post)))
-
-    // Update user in stories
-    setStories(stories.map((story) => (story.userId === user.id ? { ...story, user: updatedUser } : story)))
-
-    // Update user in comments
-    setPosts(
-      posts.map((post) => ({
-        ...post,
-        comments: post.comments.map((comment) =>
-          comment.userId === user.id
-            ? { ...comment, displayName: updatedUser.displayName, profilePic: updatedUser.profilePic }
-            : comment,
-        ),
-      })),
-    )
-
-    setShowProfileEdit(false)
-    showNotificationMessage("Profile updated successfully!")
-  }
-
-  const generateShareLink = (type: "post" | "video", id: string) => {
-    const baseUrl = window.location.origin
-    const shareUrl = `${baseUrl}/share/${type}/${id}`
-
+  const handleShare = (post: Post) => {
+    const shareUrl = `${window.location.origin}/post/${post.id}`
     navigator.clipboard
       .writeText(shareUrl)
       .then(() => {
-        showNotificationMessage("Link copied to clipboard!")
+        toast({
+          description: "Link copied to clipboard!",
+        })
       })
       .catch(() => {
         // Fallback for older browsers
@@ -704,37 +563,144 @@ export default function MzansiGossipClub() {
         textArea.select()
         document.execCommand("copy")
         document.body.removeChild(textArea)
-        showNotificationMessage("Link copied to clipboard!")
+        toast({
+          description: "Link copied to clipboard!",
+        })
       })
   }
 
-  const handleNewsComment = (newsId: string) => {
-    const commentText = newsCommentInputs[newsId]?.trim()
-    if (!commentText || !user) return
+  const handleSearch = (query: string) => {
+    setSearchQuery(query)
+    if (query.trim()) {
+      const results = allUsers.filter(
+        (searchUser) =>
+          searchUser.id !== user?.id &&
+          (searchUser.displayName.toLowerCase().includes(query.toLowerCase()) ||
+            searchUser.email.toLowerCase().includes(query.toLowerCase())),
+      )
+      setSearchResults(results)
+      setShowSearch(true)
+    } else {
+      setShowSearch(false)
+      setSearchResults([])
+    }
+  }
 
-    const newComment: Comment = {
-      id: `nc${Date.now()}`,
-      text: commentText,
-      userId: user.id,
-      displayName: user.displayName,
-      profilePic: user.profilePic,
+  const sendFriendRequest = (userId: string) => {
+    if (!currentUser || !user) return
+
+    // Check if request already exists
+    const existingRequest = friendRequests.find((req) => req.fromUserId === currentUser.uid && req.toUserId === userId)
+
+    if (existingRequest) {
+      toast({
+        title: "Info",
+        description: "Friend request already sent",
+      })
+      return
+    }
+
+    const targetUser = allUsers.find((u) => u.id === userId)
+    if (!targetUser) return
+
+    const newRequest: FriendRequest = {
+      id: `req-${Date.now()}`,
+      fromUserId: currentUser.uid,
+      toUserId: userId,
+      fromUser: user,
+      status: "pending",
+      mutualFriends: 0,
       createdAt: new Date(),
     }
 
-    setNewsComments({
-      ...newsComments,
-      [newsId]: [...(newsComments[newsId] || []), newComment],
-    })
+    setFriendRequests([newRequest, ...friendRequests])
 
-    setNewsCommentInputs({ ...newsCommentInputs, [newsId]: "" })
-    showNotificationMessage("Comment added!")
+    // Create notification
+    const newNotification: Notification = {
+      id: `notif-${Date.now()}`,
+      type: "friend_request",
+      fromUserId: currentUser.uid,
+      fromUser: user,
+      message: "sent you a friend request",
+      createdAt: new Date(),
+      read: false,
+    }
+    setNotifications([newNotification, ...notifications])
+
+    toast({
+      description: "Friend request sent!",
+    })
   }
 
-  const incrementVideoViews = (newsId: string) => {
-    setNewsViewCounts({
-      ...newsViewCounts,
-      [newsId]: (newsViewCounts[newsId] || 0) + 1,
+  const acceptFriendRequest = (requestId: string) => {
+    if (!currentUser || !user) return
+
+    const request = friendRequests.find((req) => req.id === requestId)
+    if (!request) return
+
+    // Update request status
+    const updatedRequests = friendRequests.map((req) =>
+      req.id === requestId ? { ...req, status: "accepted" as const } : req,
+    )
+    setFriendRequests(updatedRequests)
+
+    // Update both users' friends lists
+    const updatedUsers = allUsers.map((u) => {
+      if (u.id === currentUser.uid) {
+        return { ...u, friends: [...(u.friends || []), request.fromUserId] }
+      }
+      if (u.id === request.fromUserId) {
+        return { ...u, friends: [...(u.friends || []), currentUser.uid] }
+      }
+      return u
     })
+    setAllUsers(updatedUsers)
+
+    // Update current user
+    setUser({ ...user, friends: [...(user.friends || []), request.fromUserId] })
+
+    // Create notification
+    const newNotification: Notification = {
+      id: `notif-${Date.now()}`,
+      type: "friend_accept",
+      fromUserId: currentUser.uid,
+      fromUser: user,
+      message: "accepted your friend request",
+      createdAt: new Date(),
+      read: false,
+    }
+    setNotifications([newNotification, ...notifications])
+
+    toast({
+      description: "Friend request accepted!",
+    })
+  }
+
+  const declineFriendRequest = (requestId: string) => {
+    const updatedRequests = friendRequests.map((req) =>
+      req.id === requestId ? { ...req, status: "declined" as const } : req,
+    )
+    setFriendRequests(updatedRequests)
+
+    toast({
+      description: "Friend request declined",
+    })
+  }
+
+  const sendMessage = () => {
+    if (!chatInput.trim() || !selectedChatUser || !currentUser || !user) return
+
+    const newMessage: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      fromUserId: currentUser.uid,
+      toUserId: selectedChatUser.id,
+      message: chatInput,
+      createdAt: new Date(),
+      read: false,
+    }
+
+    setChatMessages([newMessage, ...chatMessages])
+    setChatInput("")
   }
 
   const startChat = (chatUser: UserType) => {
@@ -743,11 +709,125 @@ export default function MzansiGossipClub() {
     setShowInbox(false)
 
     // Mark messages as read
-    markMessagesAsRead(chatUser.id)
+    const updatedMessages = chatMessages.map((msg) =>
+      msg.fromUserId === chatUser.id && msg.toUserId === currentUser?.uid ? { ...msg, read: true } : msg,
+    )
+    setChatMessages(updatedMessages)
 
-    // Add to active chats if not already there
-    if (!activeChats.find((u) => u.id === chatUser.id)) {
-      setActiveChats([...activeChats, chatUser])
+    // Update unread count
+    setUnreadMessages({ ...unreadMessages, [chatUser.id]: 0 })
+  }
+
+  const handleProfileEdit = () => {
+    if (!currentUser || !user) return
+
+    const updatedUser = {
+      ...user,
+      displayName: editingProfile.displayName || user.displayName,
+      bio: editingProfile.bio || user.bio || "",
+      interests: editingProfile.interests || user.interests || "",
+      profilePic: editingProfile.profilePic || user.profilePic,
+    }
+
+    setUser(updatedUser)
+
+    // Update in all users list
+    const updatedUsers = allUsers.map((u) => (u.id === currentUser.uid ? updatedUser : u))
+    setAllUsers(updatedUsers)
+
+    // Update posts with new user info
+    const updatedPosts = posts.map((post) => (post.userId === currentUser.uid ? { ...post, user: updatedUser } : post))
+    setPosts(updatedPosts)
+
+    setShowProfileEdit(false)
+    setEditingProfile({ displayName: "", bio: "", interests: "", profilePic: "" })
+
+    toast({
+      description: "Profile updated successfully!",
+    })
+  }
+
+  const handleProfilePicUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      const url = URL.createObjectURL(file)
+      setEditingProfile({ ...editingProfile, profilePic: url })
+    }
+  }
+
+  const handleSongUpload = () => {
+    if (!currentUser || !user) return
+
+    if (!newSong.title || !newSong.artist || !newSong.audioFile) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields and upload an audio file",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Check if audio file is at least 2 minutes (120 seconds)
+    const audio = new Audio(URL.createObjectURL(newSong.audioFile))
+    audio.addEventListener("loadedmetadata", () => {
+      if (audio.duration < 120) {
+        toast({
+          title: "Error",
+          description: "Song must be at least 2 minutes long",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const audioUrl = URL.createObjectURL(newSong.audioFile!)
+      const coverArt = newSong.coverArtPreview || "/placeholder.svg?height=300&width=300"
+
+      const newSongData: Song = {
+        id: `song-${Date.now()}`,
+        title: newSong.title,
+        artist: newSong.artist,
+        album: newSong.album || newSong.title,
+        coverArt,
+        audioUrl,
+        duration: audio.duration,
+        genre: newSong.genre || "Other",
+        userId: currentUser.uid,
+        user: user,
+        createdAt: new Date(),
+      }
+
+      setSongs([newSongData, ...songs])
+
+      // Reset form
+      setNewSong({
+        title: "",
+        artist: "",
+        album: "",
+        genre: "",
+        audioFile: null,
+        coverArt: null,
+        coverArtPreview: "",
+      })
+
+      setShowAddSong(false)
+      toast({
+        description: "Song uploaded successfully!",
+      })
+    })
+  }
+
+  const handleSongFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      setNewSong({ ...newSong, audioFile: file })
+    }
+  }
+
+  const handleSongCoverSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      const url = URL.createObjectURL(file)
+      setNewSong({ ...newSong, coverArt: file, coverArtPreview: url })
     }
   }
 
@@ -760,44 +840,62 @@ export default function MzansiGossipClub() {
     setIsPlaying(!isPlaying)
   }
 
-  const downloadSong = (song: Song) => {
-    // In a real app, this would trigger a download
-    // For now, we'll just show a notification
-    showNotificationMessage(`Downloading ${song.title}...`)
+  const markNotificationAsRead = (notificationId: string) => {
+    const updatedNotifications = notifications.map((notif) =>
+      notif.id === notificationId ? { ...notif, read: true } : notif,
+    )
+    setNotifications(updatedNotifications)
   }
 
-  const countMutualFriends = (otherUserId: string) => {
-    if (!user || !user.friends) return 0
-    const otherUser = allUsers.find((u) => u.id === otherUserId)
-    if (!otherUser || !otherUser.friends) return 0
-
-    const mutualCount = user.friends.filter((friendId) => otherUser.friends?.includes(friendId)).length
-    return mutualCount
-  }
-
-  if (!user) {
+  if (!currentUser) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${darkMode ? "dark bg-gray-900" : "bg-gray-50"}`}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="text-center text-2xl font-bold text-blue-600">TheMzansiGossipClub</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <div className="flex gap-2">
-              <Button onClick={handleLogin} className="flex-1">
-                Login
-              </Button>
-              <Button onClick={handleLogin} variant="outline" className="flex-1">
-                Sign Up
-              </Button>
-            </div>
+            <Tabs
+              defaultValue={isSignUp ? "signup" : "login"}
+              onValueChange={(value) => setIsSignUp(value === "signup")}
+            >
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="login">Login</TabsTrigger>
+                <TabsTrigger value="signup">Sign Up</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="login" className="space-y-4">
+                <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <Button onClick={handleLogin} className="w-full" disabled={loading}>
+                  {loading ? "Logging in..." : "Login"}
+                </Button>
+              </TabsContent>
+
+              <TabsContent value="signup" className="space-y-4">
+                <Input
+                  type="text"
+                  placeholder="Display Name"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                />
+                <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <Button onClick={handleSignUp} className="w-full" disabled={loading}>
+                  {loading ? "Creating account..." : "Sign Up"}
+                </Button>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>
@@ -805,9 +903,9 @@ export default function MzansiGossipClub() {
   }
 
   return (
-    <div className={`min-h-screen transition-colors duration-500 ${darkMode ? "dark bg-gray-900" : "bg-gray-50"}`}>
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 z-50 bg-white dark:bg-gray-800 border-b shadow-sm">
+      <div className="sticky top-0 z-50 bg-white border-b shadow-sm">
         <div className="container mx-auto px-4 py-2">
           <div className="flex items-center justify-between">
             {/* Left - Logo and Search */}
@@ -828,11 +926,6 @@ export default function MzansiGossipClub() {
                         <div
                           key={searchUser.id}
                           className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                          onClick={() => {
-                            setShowUserProfile(searchUser)
-                            setShowSearch(false)
-                            setSearchQuery("")
-                          }}
                         >
                           <Avatar className="h-8 w-8">
                             <AvatarImage src={searchUser.profilePic || "/placeholder.svg"} />
@@ -840,457 +933,617 @@ export default function MzansiGossipClub() {
                               <UserIcon className="h-3 w-3" />
                             </AvatarFallback>
                           </Avatar>
-                          <div>
+                          <div className="flex-1">
                             <p className="font-semibold text-sm">{searchUser.displayName}</p>
                             <p className="text-xs text-muted-foreground">{searchUser.email}</p>
                           </div>
+                          <Button size="sm" onClick={() => sendFriendRequest(searchUser.id)}>
+                            <UserPlus className="h-3 w-3 mr-1" />
+                            Add
+                          </Button>
                         </div>
                       ))}
                     </CardContent>
                   </Card>
                 )}
               </div>
-            </div>
-
-            {/* Center - Navigation */}
-            <div className="flex items-center gap-2">
-              <Button
-                variant={currentPage === "home" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setCurrentPage("home")}
-              >
-                <Home className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={currentPage === "news" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setCurrentPage("news")}
-              >
-                <Newspaper className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm">
-                <Play className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={currentPage === "music" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setCurrentPage("music")}
-              >
-                <Music className="h-4 w-4" />
-              </Button>
-            </div>
-
-            {/* Right - User Actions */}
-            <div className="flex items-center gap-2">
-              {/* Friend Requests */}
-              <div className="relative">
-                <Button variant="ghost" size="sm" onClick={() => setShowFriendRequests(!showFriendRequests)}>
-                  <UserPlus className="h-4 w-4" />
-                  {friendRequests.filter((req) => req.status === "pending").length > 0 && (
-                    <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs">
-                      {friendRequests.filter((req) => req.status === "pending").length}
-                    </Badge>
-                  )}
-                </Button>
-                {showFriendRequests && (
-                  <Card className="absolute top-full right-0 mt-2 w-80 z-50">
-                    <CardHeader>
-                      <CardTitle className="text-sm">Friend Requests</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {friendRequests
-                        .filter((req) => req.status === "pending")
-                        .map((request) => (
-                          <div key={request.id} className="flex items-center gap-3">
-                            <Avatar className="h-10 w-10">
-                              <AvatarImage src={request.fromUser.profilePic || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                <UserIcon className="h-4 w-4" />
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1">
-                              <p className="font-semibold text-sm">{request.fromUser.displayName}</p>
-                              {request.mutualFriends && request.mutualFriends > 0 && (
-                                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                  <Users className="h-3 w-3" />
-                                  {request.mutualFriends} mutual friend{request.mutualFriends !== 1 ? "s" : ""}
-                                </p>
-                              )}
-                              <div className="flex gap-2 mt-1">
-                                <Button size="sm" onClick={() => acceptFriendRequest(request.id)}>
-                                  Accept
-                                </Button>
-                                <Button size="sm" variant="outline">
-                                  Decline
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      {friendRequests.filter((req) => req.status === "pending").length === 0 && (
-                        <p className="text-sm text-muted-foreground">No pending requests</p>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-
-              {/* Chat */}
-              <div className="relative">
-                <Button variant="ghost" size="sm" onClick={() => setShowInbox(!showInbox)}>
-                  <MessageSquare className="h-4 w-4" />
-                  {Object.values(unreadMessages).reduce((a, b) => a + b, 0) > 0 && (
-                    <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs">
-                      {Object.values(unreadMessages).reduce((a, b) => a + b, 0)}
-                    </Badge>
-                  )}
-                </Button>
-              </div>
-
-              {/* Notifications */}
-              <div className="relative">
-                <Button variant="ghost" size="sm" onClick={() => setShowNotifications(!showNotifications)}>
-                  <Bell className="h-4 w-4" />
-                  {notifications.filter((n) => !n.read).length > 0 && (
-                    <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs">
-                      {notifications.filter((n) => !n.read).length}
-                    </Badge>
-                  )}
-                </Button>
-                {showNotifications && (
-                  <Card className="absolute top-full right-0 mt-2 w-80 z-50">
-                    <CardHeader>
-                      <CardTitle className="text-sm">Notifications</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {notifications.map((notif) => (
-                        <div
-                          key={notif.id}
-                          className={`flex items-center gap-3 p-2 rounded ${!notif.read ? "bg-blue-50" : ""}`}
-                        >
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={notif.fromUser.profilePic || "/placeholder.svg"} />
-                            <AvatarFallback>
-                              <UserIcon className="h-3 w-3" />
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                            <p className="text-sm">
-                              <span className="font-semibold">{notif.fromUser.displayName}</span> {notif.message}
-                            </p>
-                            <p className="text-xs text-muted-foreground">{notif.createdAt.toLocaleDateString()}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-
-              {/* User Menu */}
-              <div className="relative">
-                <Avatar
-                  className="h-8 w-8 cursor-pointer"
-                  onClick={() => {
-                    setEditingProfile({ displayName: user.displayName, profilePic: user.profilePic })
-                    setShowProfileEdit(true)
-                  }}
-                >
-                  <AvatarImage src={user.profilePic || "/placeholder.svg"} />
-                  <AvatarFallback>
-                    <UserIcon className="h-4 w-4" />
-                  </AvatarFallback>
-                </Avatar>
-              </div>
-
-              {/* Dark Mode */}
-              <Button variant="ghost" size="sm" onClick={() => setDarkMode(!darkMode)}>
-                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-6">
-        {currentPage === "home" && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Left Sidebar */}
-            <div className="space-y-6">
-              {/* Stories */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Stories</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-2 overflow-x-auto pb-2">
-                    {/* Add Story */}
-                    <div className="flex-shrink-0">
-                      <div
-                        className="w-16 h-20 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50"
-                        onClick={() => storyInputRef.current?.click()}
-                      >
-                        <Plus className="h-6 w-6 text-gray-400" />
-                        <span className="text-xs text-gray-500 mt-1">Add</span>
-                      </div>
-                      <input
-                        ref={storyInputRef}
-                        type="file"
-                        accept="image/*,video/*"
-                        onChange={handleStoryUpload}
-                        className="hidden"
-                      />
-                    </div>
-
-                    {/* Existing Stories */}
-                    {stories.map((story) => (
-                      <div key={story.id} className="flex-shrink-0 relative">
-                        <div className="w-16 h-20 rounded-lg overflow-hidden border-2 border-blue-500">
-                          <img
-                            src={story.mediaURL || "/placeholder.svg"}
-                            alt="Story"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <Avatar className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 h-6 w-6 border-2 border-white">
-                          <AvatarImage src={story.user.profilePic || "/placeholder.svg"} />
-                          <AvatarFallback>
-                            <UserIcon className="h-3 w-3" />
-                          </AvatarFallback>
-                        </Avatar>
-                        <p className="text-xs text-center mt-1 truncate w-16">{story.user.displayName}</p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Video Shorts */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Video Shorts</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {videoShorts.map((short) => (
-                      <div
-                        key={short.id}
-                        className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded"
-                      >
-                        <div className="w-12 h-16 bg-gray-200 rounded overflow-hidden relative">
-                          <img
-                            src={short.thumbnail || "/placeholder.svg"}
-                            alt={short.title}
-                            className="w-full h-full object-cover"
-                          />
-                          <Play className="absolute inset-0 m-auto h-4 w-4 text-white" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{short.title}</p>
-                          <p className="text-xs text-muted-foreground">{short.user.displayName}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+      {/* Navigation Bar */}
+      <div className="bg-white border-b shadow-sm py-2">
+        <div className="container mx-auto">
+          <div className="flex items-center justify-between">
+            <Button
+              variant={currentPage === "home" ? "default" : "ghost"}
+              className="flex-1"
+              onClick={() => setCurrentPage("home")}
+            >
+              <Home className="h-5 w-5" />
+            </Button>
+            <Button
+              variant={currentPage === "news" ? "default" : "ghost"}
+              className="flex-1"
+              onClick={() => setCurrentPage("news")}
+            >
+              <Newspaper className="h-5 w-5" />
+            </Button>
+            <Button
+              variant={currentPage === "videos" ? "default" : "ghost"}
+              className="flex-1"
+              onClick={() => setCurrentPage("videos")}
+            >
+              <Play className="h-5 w-5" />
+            </Button>
+            <Button
+              variant={currentPage === "music" ? "default" : "ghost"}
+              className="flex-1"
+              onClick={() => setCurrentPage("music")}
+            >
+              <Music className="h-5 w-5" />
+            </Button>
+            <div className="relative flex-1">
+              <Button variant="ghost" className="w-full" onClick={() => setShowFriendRequests(!showFriendRequests)}>
+                <UserPlus className="h-5 w-5" />
+                {friendRequests.filter((req) => req.status === "pending" && req.toUserId === currentUser?.uid).length >
+                  0 && (
+                  <Badge className="absolute -top-1 right-1/4 h-5 w-5 rounded-full p-0 text-xs">
+                    {
+                      friendRequests.filter((req) => req.status === "pending" && req.toUserId === currentUser?.uid)
+                        .length
+                    }
+                  </Badge>
+                )}
+              </Button>
             </div>
+            <div className="relative flex-1">
+              <Button variant="ghost" className="w-full" onClick={() => setShowInbox(!showInbox)}>
+                <MessageSquare className="h-5 w-5" />
+                {Object.values(unreadMessages).reduce((a, b) => a + b, 0) > 0 && (
+                  <Badge className="absolute -top-1 right-1/4 h-5 w-5 rounded-full p-0 text-xs">
+                    {Object.values(unreadMessages).reduce((a, b) => a + b, 0)}
+                  </Badge>
+                )}
+              </Button>
+            </div>
+            <div className="relative flex-1">
+              <Button variant="ghost" className="w-full" onClick={() => setShowNotifications(!showNotifications)}>
+                <Bell className="h-5 w-5" />
+                {notifications.filter((n) => !n.read).length > 0 && (
+                  <Badge className="absolute -top-1 right-1/4 h-5 w-5 rounded-full p-0 text-xs">
+                    {notifications.filter((n) => !n.read).length}
+                  </Badge>
+                )}
+              </Button>
+            </div>
+            <Button
+              variant={currentPage === "profile" ? "default" : "ghost"}
+              className="flex-1"
+              onClick={() => setCurrentPage("profile")}
+            >
+              <Avatar className="h-7 w-7">
+                <AvatarImage src={user?.profilePic || "/placeholder.svg"} />
+                <AvatarFallback>
+                  <UserIcon className="h-4 w-4" />
+                </AvatarFallback>
+              </Avatar>
+            </Button>
+          </div>
+        </div>
+      </div>
 
-            {/* Main Content */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Create Post */}
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3 mb-4">
-                    <Avatar>
-                      <AvatarImage src={user.profilePic || "/placeholder.svg"} />
+      {/* Friend Requests Dropdown */}
+      {showFriendRequests && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <Card className="w-full max-w-md m-4">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Friend Requests</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowFriendRequests(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-3 max-h-96 overflow-y-auto">
+              {friendRequests
+                .filter((req) => req.status === "pending" && req.toUserId === currentUser?.uid)
+                .map((request) => (
+                  <div key={request.id} className="flex items-center gap-3">
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={request.fromUser.profilePic || "/placeholder.svg"} />
                       <AvatarFallback>
                         <UserIcon className="h-4 w-4" />
                       </AvatarFallback>
                     </Avatar>
-                    <Textarea
-                      placeholder="What's on your mind?"
-                      value={caption}
-                      onChange={(e) => setCaption(e.target.value)}
-                      className="flex-1"
-                    />
+                    <div className="flex-1">
+                      <p className="font-semibold text-sm">{request.fromUser.displayName}</p>
+                      <p className="text-xs text-muted-foreground">{request.fromUser.email}</p>
+                      <div className="flex gap-2 mt-1">
+                        <Button size="sm" onClick={() => acceptFriendRequest(request.id)}>
+                          Accept
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => declineFriendRequest(request.id)}>
+                          Decline
+                        </Button>
+                      </div>
+                    </div>
                   </div>
+                ))}
+              {friendRequests.filter((req) => req.status === "pending" && req.toUserId === currentUser?.uid).length ===
+                0 && <p className="text-sm text-muted-foreground text-center">No pending requests</p>}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-                  {previewUrl && (
-                    <div className="relative mb-4">
-                      {selectedFile?.type.startsWith("video") ? (
-                        <video controls className="w-full max-h-64 rounded-lg">
-                          <source src={previewUrl} type={selectedFile.type} />
-                        </video>
-                      ) : (
-                        <img
-                          src={previewUrl || "/placeholder.svg"}
-                          alt="Preview"
-                          className="w-full max-h-64 object-cover rounded-lg"
-                        />
+      {/* Notifications Dropdown */}
+      {showNotifications && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <Card className="w-full max-w-md m-4">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Notifications</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowNotifications(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-3 max-h-96 overflow-y-auto">
+              {notifications.map((notif) => (
+                <div
+                  key={notif.id}
+                  className={`flex items-center gap-3 p-2 rounded cursor-pointer ${!notif.read ? "bg-blue-50" : ""}`}
+                  onClick={() => markNotificationAsRead(notif.id)}
+                >
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={notif.fromUser.profilePic || "/placeholder.svg"} />
+                    <AvatarFallback>
+                      <UserIcon className="h-3 w-3" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <p className="text-sm">
+                      <span className="font-semibold">{notif.fromUser.displayName}</span> {notif.message}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {notif.createdAt?.toLocaleDateString?.() || "Just now"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {notifications.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center">No notifications</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Inbox Dropdown */}
+      {showInbox && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <Card className="w-full max-w-md m-4">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Messages</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowInbox(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-3 max-h-96 overflow-y-auto">
+              {user?.friends?.map((friendId) => {
+                const friend = allUsers.find((u) => u.id === friendId)
+                if (!friend) return null
+
+                const unreadCount = unreadMessages[friendId] || 0
+                const lastMessage = chatMessages
+                  .filter(
+                    (msg) =>
+                      (msg.fromUserId === friendId && msg.toUserId === currentUser?.uid) ||
+                      (msg.fromUserId === currentUser?.uid && msg.toUserId === friendId),
+                  )
+                  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+
+                return (
+                  <div
+                    key={friendId}
+                    className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                    onClick={() => startChat(friend)}
+                  >
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={friend.profilePic || "/placeholder.svg"} />
+                      <AvatarFallback>
+                        <UserIcon className="h-4 w-4" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-sm">{friend.displayName}</p>
+                        {unreadCount > 0 && <Badge className="h-5 w-5 rounded-full p-0 text-xs">{unreadCount}</Badge>}
+                      </div>
+                      {lastMessage && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {lastMessage.fromUserId === currentUser?.uid ? "You: " : ""}
+                          {lastMessage.message}
+                        </p>
                       )}
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="absolute top-2 right-2"
-                        onClick={() => {
-                          setSelectedFile(null)
-                          setPreviewUrl("")
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
                     </div>
-                  )}
+                  </div>
+                )
+              })}
+              {(!user?.friends || user.friends.length === 0) && (
+                <p className="text-sm text-muted-foreground text-center">No friends to chat with</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>
-                        <ImageIcon className="h-4 w-4 mr-2" />
-                        Photo
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>
-                        <Video className="h-4 w-4 mr-2" />
-                        Video
-                      </Button>
+      {/* Chat Modal */}
+      {showChat && selectedChatUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <Card className="w-full max-w-md m-4 h-96 flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={selectedChatUser.profilePic || "/placeholder.svg"} />
+                  <AvatarFallback>
+                    <UserIcon className="h-3 w-3" />
+                  </AvatarFallback>
+                </Avatar>
+                <CardTitle className="text-sm">{selectedChatUser.displayName}</CardTitle>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowChat(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="flex-1 flex flex-col">
+              <div className="flex-1 overflow-y-auto space-y-2 mb-4">
+                {chatMessages
+                  .filter(
+                    (msg) =>
+                      (msg.fromUserId === selectedChatUser.id && msg.toUserId === currentUser?.uid) ||
+                      (msg.fromUserId === currentUser?.uid && msg.toUserId === selectedChatUser.id),
+                  )
+                  .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                  .map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${message.fromUserId === currentUser?.uid ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                          message.fromUserId === currentUser?.uid
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-200 text-gray-900"
+                        }`}
+                      >
+                        {message.message}
+                      </div>
                     </div>
+                  ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Type a message..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                  className="flex-1"
+                />
+                <Button onClick={sendMessage} size="sm">
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Profile Edit Modal */}
+      <Dialog open={showProfileEdit} onOpenChange={setShowProfileEdit}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Profile</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex flex-col items-center gap-4">
+              <Avatar className="h-20 w-20">
+                <AvatarImage src={editingProfile.profilePic || user?.profilePic || "/placeholder.svg"} />
+                <AvatarFallback>
+                  <UserIcon className="h-8 w-8" />
+                </AvatarFallback>
+              </Avatar>
+              <Button variant="outline" onClick={() => profilePicInputRef.current?.click()}>
+                <Camera className="h-4 w-4 mr-2" />
+                Change Photo
+              </Button>
+              <input
+                ref={profilePicInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleProfilePicUpload}
+                className="hidden"
+              />
+            </div>
+            <div>
+              <Label htmlFor="displayName">Display Name</Label>
+              <Input
+                id="displayName"
+                placeholder={user?.displayName}
+                value={editingProfile.displayName}
+                onChange={(e) => setEditingProfile({ ...editingProfile, displayName: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="bio">Bio</Label>
+              <Textarea
+                id="bio"
+                placeholder="Tell us about yourself..."
+                value={editingProfile.bio}
+                onChange={(e) => setEditingProfile({ ...editingProfile, bio: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="interests">Interests</Label>
+              <Input
+                id="interests"
+                placeholder="Music, Sports, Technology..."
+                value={editingProfile.interests}
+                onChange={(e) => setEditingProfile({ ...editingProfile, interests: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleProfileEdit} className="flex-1">
+                Save Changes
+              </Button>
+              <Button variant="outline" onClick={() => setShowProfileEdit(false)} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Song Modal */}
+      <Dialog open={showAddSong} onOpenChange={setShowAddSong}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upload Song</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="songTitle">Title *</Label>
+              <Input
+                id="songTitle"
+                placeholder="Song title"
+                value={newSong.title}
+                onChange={(e) => setNewSong({ ...newSong, title: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="songArtist">Artist *</Label>
+              <Input
+                id="songArtist"
+                placeholder="Artist name"
+                value={newSong.artist}
+                onChange={(e) => setNewSong({ ...newSong, artist: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="songAlbum">Album</Label>
+              <Input
+                id="songAlbum"
+                placeholder="Album name"
+                value={newSong.album}
+                onChange={(e) => setNewSong({ ...newSong, album: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="songGenre">Genre</Label>
+              <Input
+                id="songGenre"
+                placeholder="Genre"
+                value={newSong.genre}
+                onChange={(e) => setNewSong({ ...newSong, genre: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Audio File * (minimum 2 minutes)</Label>
+              <Button variant="outline" onClick={() => songFileInputRef.current?.click()} className="w-full">
+                <Upload className="h-4 w-4 mr-2" />
+                {newSong.audioFile ? newSong.audioFile.name : "Choose audio file"}
+              </Button>
+              <input
+                ref={songFileInputRef}
+                type="file"
+                accept="audio/*"
+                onChange={handleSongFileSelect}
+                className="hidden"
+              />
+            </div>
+            <div>
+              <Label>Cover Art</Label>
+              <Button variant="outline" onClick={() => songCoverInputRef.current?.click()} className="w-full">
+                <ImageIcon className="h-4 w-4 mr-2" />
+                {newSong.coverArt ? newSong.coverArt.name : "Choose cover image"}
+              </Button>
+              <input
+                ref={songCoverInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleSongCoverSelect}
+                className="hidden"
+              />
+              {newSong.coverArtPreview && (
+                <img
+                  src={newSong.coverArtPreview || "/placeholder.svg"}
+                  alt="Cover preview"
+                  className="w-full h-32 object-cover rounded mt-2"
+                />
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleSongUpload} className="flex-1">
+                Upload Song
+              </Button>
+              <Button variant="outline" onClick={() => setShowAddSong(false)} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="container mx-auto px-4 py-6">
+        {currentPage === "home" && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* Create Post */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <Avatar>
+                    <AvatarImage src={user?.profilePic || "/placeholder.svg"} />
+                    <AvatarFallback>
+                      <UserIcon className="h-4 w-4" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <Textarea
+                    placeholder="What's on your mind?"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                    className="flex-1"
+                  />
+                </div>
+
+                {previewUrl && (
+                  <div className="relative mb-4">
+                    {selectedFile?.type.startsWith("video") ? (
+                      <video controls className="w-full max-h-64 rounded-lg">
+                        <source src={previewUrl} type={selectedFile.type} />
+                      </video>
+                    ) : (
+                      <img
+                        src={previewUrl || "/placeholder.svg"}
+                        alt="Preview"
+                        className="w-full max-h-64 object-cover rounded-lg"
+                      />
+                    )}
                     <Button
+                      variant="destructive"
+                      size="sm"
+                      className="absolute top-2 right-2"
                       onClick={() => {
-                        if (caption.trim() || selectedFile) {
-                          const newPost: Post = {
-                            id: Date.now().toString(),
-                            userId: user.id,
-                            caption,
-                            mediaURL: previewUrl,
-                            mediaType: selectedFile?.type.startsWith("video") ? "video" : selectedFile ? "image" : "",
-                            reactions: [],
-                            comments: [],
-                            createdAt: new Date(),
-                            user,
-                            viewCount: 0,
-                          }
-                          setPosts([newPost, ...posts])
-                          setCaption("")
-                          setSelectedFile(null)
-                          setPreviewUrl("")
-                          showNotificationMessage("Post shared!")
-                        }
+                        setSelectedFile(null)
+                        setPreviewUrl("")
                       }}
                     >
-                      Post
+                      <X className="h-4 w-4" />
                     </Button>
                   </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,video/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        setSelectedFile(file)
-                        setPreviewUrl(URL.createObjectURL(file))
-                      }
-                    }}
-                    className="hidden"
-                  />
-                </CardContent>
-              </Card>
+                )}
 
-              {/* Posts Feed */}
-              {posts.map((post) => (
-                <Card key={post.id}>
-                  <CardContent className="p-4">
-                    {/* Post Header */}
-                    <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>
+                      <ImageIcon className="h-4 w-4 mr-2" />
+                      Photo
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>
+                      <Video className="h-4 w-4 mr-2" />
+                      Video
+                    </Button>
+                  </div>
+                  <Button onClick={handleCreatePost} disabled={loading}>
+                    {loading ? "Posting..." : "Post"}
+                  </Button>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </CardContent>
+            </Card>
+
+            {/* Posts Feed */}
+            {posts.map((post) => (
+              <Card key={post.id}>
+                <CardContent className="p-4">
+                  {/* Post Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
                       <Avatar>
                         <AvatarImage src={post.user.profilePic || "/placeholder.svg"} />
                         <AvatarFallback>
                           <UserIcon className="h-4 w-4" />
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex-1">
+                      <div>
                         <p className="font-semibold">{post.user.displayName}</p>
-                        <p className="text-sm text-muted-foreground">{post.createdAt.toLocaleDateString()} • 🌍</p>
+                        <p className="text-sm text-muted-foreground">
+                          {post.createdAt?.toLocaleDateString?.() || "Just now"}
+                        </p>
                       </div>
-                      <Button variant="ghost" size="sm">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
                     </div>
+                    <Button variant="ghost" size="sm">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </div>
 
-                    {/* Post Content */}
-                    <p className="mb-4">{post.caption}</p>
-                    {post.mediaURL && (
-                      <>
-                        {post.mediaType === "video" ? (
-                          <div className="relative">
-                            <video
-                              controls
-                              className="w-full rounded-lg mb-4"
-                              onPlay={() => {
-                                setPosts(
-                                  posts.map((p) =>
-                                    p.id === post.id ? { ...p, viewCount: (p.viewCount || 0) + 1 } : p,
-                                  ),
-                                )
-                              }}
-                            >
-                              <source src={post.mediaURL} />
-                            </video>
-                            <div className="absolute bottom-2 right-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded flex items-center">
-                              <Eye className="h-3 w-3 mr-1" />
-                              {post.viewCount || 0}
-                            </div>
-                          </div>
-                        ) : (
-                          <img
-                            src={post.mediaURL || "/placeholder.svg"}
-                            alt="Post media"
-                            className="w-full rounded-lg mb-4"
-                          />
-                        )}
-                      </>
-                    )}
+                  {/* Post Content */}
+                  {post.caption && <p className="mb-4">{post.caption}</p>}
 
-                    {/* Reaction Summary */}
-                    {post.reactions.length > 0 && (
-                      <div className="flex items-center justify-between mb-3 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <div className="flex -space-x-1">
-                            {[...new Set(post.reactions.map((r) => r.emoji))].slice(0, 3).map((emoji, index) => (
-                              <span key={index} className="text-lg">
-                                {emoji}
-                              </span>
-                            ))}
-                          </div>
-                          <span>{post.reactions.length}</span>
-                        </div>
-                        <div className="flex gap-4">
-                          <span>{post.comments.length} comments</span>
-                          <span>0 shares</span>
-                        </div>
+                  {post.mediaURL && (
+                    <div className="mb-4">
+                      {post.mediaType === "video" ? (
+                        <video controls className="w-full rounded-lg">
+                          <source src={post.mediaURL} />
+                        </video>
+                      ) : (
+                        <img src={post.mediaURL || "/placeholder.svg"} alt="Post media" className="w-full rounded-lg" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Reactions Display */}
+                  {post.reactions.length > 0 && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="flex -space-x-1">
+                        {Array.from(new Set(post.reactions.map((r) => r.emoji))).map((emoji, index) => (
+                          <span key={index} className="text-sm bg-white rounded-full border p-1">
+                            {emoji}
+                          </span>
+                        ))}
                       </div>
-                    )}
+                      <span className="text-sm text-muted-foreground">{post.reactions.length}</span>
+                    </div>
+                  )}
 
-                    <Separator className="mb-3" />
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center justify-between mb-4">
+                  {/* Post Actions */}
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="flex gap-4">
                       <div className="relative">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setShowReactions({ ...showReactions, [post.id]: !showReactions[post.id] })}
-                          className="flex items-center gap-2"
                         >
-                          <ThumbsUp className="h-4 w-4" />
+                          <Heart
+                            className={`h-4 w-4 mr-2 ${
+                              post.reactions.some((r) => r.userId === currentUser?.uid)
+                                ? "fill-red-500 text-red-500"
+                                : ""
+                            }`}
+                          />
                           Like
                         </Button>
                         {showReactions[post.id] && (
-                          <div className="absolute bottom-full left-0 mb-2 bg-white border rounded-full shadow-lg p-2 flex gap-1 z-10">
+                          <div className="absolute bottom-full left-0 mb-2 bg-white border rounded-lg shadow-lg p-2 flex gap-1 z-10">
                             {reactionEmojis.map((reaction) => (
                               <button
                                 key={reaction.type}
-                                className="text-2xl hover:scale-125 transition-transform p-1"
+                                className="text-lg hover:scale-125 transition-transform"
                                 onClick={() => handleReaction(post.id, reaction.type)}
                               >
                                 {reaction.emoji}
@@ -1299,272 +1552,84 @@ export default function MzansiGossipClub() {
                           </div>
                         )}
                       </div>
-                      <Button variant="ghost" size="sm" className="flex items-center gap-2">
-                        <MessageCircle className="h-4 w-4" />
-                        Comment
+                      <Button variant="ghost" size="sm">
+                        <MessageCircle className="h-4 w-4 mr-2" />
+                        Comment ({post.comments.length})
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex items-center gap-2"
-                        onClick={() => generateShareLink("post", post.id)}
-                      >
-                        <Share2 className="h-4 w-4" />
+                      <Button variant="ghost" size="sm" onClick={() => handleShare(post)}>
+                        <Share className="h-4 w-4 mr-2" />
                         Share
                       </Button>
                     </div>
+                  </div>
 
-                    {/* Comments */}
-                    <div className="space-y-3">
+                  {/* Comments Section */}
+                  {post.comments.length > 0 && (
+                    <div className="mt-4 space-y-2">
                       {post.comments.map((comment) => (
-                        <div key={comment.id} className="flex gap-3">
-                          <Avatar className="h-8 w-8">
+                        <div key={comment.id} className="flex items-start gap-2">
+                          <Avatar className="h-6 w-6">
                             <AvatarImage src={comment.profilePic || "/placeholder.svg"} />
                             <AvatarFallback>
                               <UserIcon className="h-3 w-3" />
                             </AvatarFallback>
                           </Avatar>
-                          <div className="flex-1">
-                            <div className="bg-gray-100 rounded-lg p-3">
-                              <p className="font-semibold text-sm">{comment.displayName}</p>
-                              <p className="text-sm">{comment.text}</p>
-                            </div>
-                            <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                              <button className="hover:underline">Like</button>
-                              <button className="hover:underline">Reply</button>
-                              <span>{comment.createdAt.toLocaleDateString()}</span>
-                            </div>
+                          <div className="bg-gray-100 rounded-lg px-3 py-2 flex-1">
+                            <p className="font-semibold text-sm">{comment.displayName}</p>
+                            <p className="text-sm">{comment.text}</p>
                           </div>
                         </div>
                       ))}
-
-                      {/* Add Comment */}
-                      <div className="flex gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarImage src={user.profilePic || "/placeholder.svg"} />
-                          <AvatarFallback>
-                            <UserIcon className="h-3 w-3" />
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 flex gap-2">
-                          <Input
-                            placeholder="Write a comment..."
-                            value={commentInputs[post.id] || ""}
-                            onChange={(e) => setCommentInputs({ ...commentInputs, [post.id]: e.target.value })}
-                            onKeyPress={(e) => {
-                              if (e.key === "Enter") {
-                                const text = commentInputs[post.id]?.trim()
-                                if (text) {
-                                  const newComment: Comment = {
-                                    id: Date.now().toString(),
-                                    text,
-                                    userId: user.id,
-                                    displayName: user.displayName,
-                                    profilePic: user.profilePic,
-                                    createdAt: new Date(),
-                                  }
-                                  setPosts(
-                                    posts.map((p) =>
-                                      p.id === post.id ? { ...p, comments: [...p.comments, newComment] } : p,
-                                    ),
-                                  )
-                                  setCommentInputs({ ...commentInputs, [post.id]: "" })
-                                }
-                              }
-                            }}
-                          />
-                          <Button size="sm">
-                            <Send className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                  )}
 
-            {/* Right Sidebar */}
-            <div className="space-y-6">
-              {/* Online Friends */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Online Friends</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {allUsers
-                      .filter((u) => u.isOnline && u.id !== user.id)
-                      .map((friend) => (
-                        <div
-                          key={friend.id}
-                          className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded"
-                          onClick={() => {
-                            setSelectedChatUser(friend)
-                            setShowChat(true)
-                          }}
-                        >
-                          <div className="relative">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={friend.profilePic || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                <UserIcon className="h-3 w-3" />
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-green-500 rounded-full border-2 border-white"></div>
-                          </div>
-                          <span className="text-sm font-medium">{friend.displayName}</span>
-                        </div>
-                      ))}
+                  {/* Add Comment */}
+                  <div className="flex items-center gap-2 mt-4">
+                    <Avatar className="h-6 w-6">
+                      <AvatarImage src={user?.profilePic || "/placeholder.svg"} />
+                      <AvatarFallback>
+                        <UserIcon className="h-3 w-3" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <Input
+                      placeholder="Write a comment..."
+                      value={commentInputs[post.id] || ""}
+                      onChange={(e) => setCommentInputs({ ...commentInputs, [post.id]: e.target.value })}
+                      onKeyPress={(e) => e.key === "Enter" && handleComment(post.id)}
+                      className="flex-1"
+                    />
+                    <Button size="sm" onClick={() => handleComment(post.id)}>
+                      <Send className="h-4 w-4" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          </div>
-        )}
+            ))}
 
-        {currentPage === "news" && (
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-6">Trending Celebrity News</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {celebrityNews.map((news) => (
-                <Card key={news.id} className="overflow-hidden">
-                  <div className="relative">
-                    <img
-                      src={news.thumbnail || "/placeholder.svg"}
-                      alt={news.title}
-                      className="w-full h-48 object-cover"
-                    />
-                    <Button
-                      className="absolute inset-0 m-auto h-12 w-12 rounded-full"
-                      onClick={() => incrementVideoViews(news.id)}
-                    >
-                      <Play className="h-6 w-6" />
-                    </Button>
-                    <div className="absolute bottom-2 right-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded flex items-center">
-                      <Eye className="h-3 w-3 mr-1" />
-                      {newsViewCounts[news.id] || 0}
-                    </div>
-                  </div>
-                  <CardContent className="p-4">
-                    <h3 className="font-bold mb-2">{news.title}</h3>
-                    <p className="text-sm text-muted-foreground mb-4">{news.description}</p>
-
-                    {/* Video Interactions */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="relative">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setShowNewsReactions({ ...showNewsReactions, [news.id]: !showNewsReactions[news.id] })
-                          }
-                          className="flex items-center gap-2"
-                        >
-                          <ThumbsUp className="h-4 w-4" />
-                          <span>{(newsReactions[news.id] || []).length}</span>
-                        </Button>
-                        {showNewsReactions[news.id] && (
-                          <div className="absolute bottom-full left-0 mb-2 bg-white border rounded-full shadow-lg p-2 flex gap-1 z-10">
-                            {reactionEmojis.map((reaction) => (
-                              <button
-                                key={reaction.type}
-                                className="text-2xl hover:scale-125 transition-transform p-1"
-                                onClick={() => handleNewsReaction(news.id, reaction.type)}
-                              >
-                                {reaction.emoji}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <Button variant="ghost" size="sm" className="flex items-center gap-2">
-                        <MessageCircle className="h-4 w-4" />
-                        <span>{(newsComments[news.id] || []).length}</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex items-center gap-2"
-                        onClick={() => generateShareLink("video", news.id)}
-                      >
-                        <Share2 className="h-4 w-4" />
-                        Share
-                      </Button>
-                    </div>
-
-                    {/* Reaction Summary */}
-                    {(newsReactions[news.id] || []).length > 0 && (
-                      <div className="flex items-center mb-3 text-sm text-muted-foreground">
-                        <div className="flex -space-x-1 mr-2">
-                          {[...new Set((newsReactions[news.id] || []).map((r) => r.emoji))]
-                            .slice(0, 3)
-                            .map((emoji, index) => (
-                              <span key={index} className="text-lg">
-                                {emoji}
-                              </span>
-                            ))}
-                        </div>
-                        <span>{(newsReactions[news.id] || []).length} reactions</span>
-                      </div>
-                    )}
-
-                    {/* Comments Section */}
-                    <div className="space-y-3">
-                      {(newsComments[news.id] || []).map((comment) => (
-                        <div key={comment.id} className="flex gap-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarImage src={comment.profilePic || "/placeholder.svg"} />
-                            <AvatarFallback>
-                              <UserIcon className="h-2 w-2" />
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                            <div className="bg-gray-100 rounded-lg p-2">
-                              <p className="font-semibold text-xs">{comment.displayName}</p>
-                              <p className="text-xs">{comment.text}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {/* Add Comment */}
-                      <div className="flex gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={user?.profilePic || "/placeholder.svg"} />
-                          <AvatarFallback>
-                            <UserIcon className="h-2 w-2" />
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 flex gap-1">
-                          <Input
-                            placeholder="Add a comment..."
-                            size="sm"
-                            value={newsCommentInputs[news.id] || ""}
-                            onChange={(e) => setNewsCommentInputs({ ...newsCommentInputs, [news.id]: e.target.value })}
-                            onKeyPress={(e) => e.key === "Enter" && handleNewsComment(news.id)}
-                          />
-                          <Button size="sm" onClick={() => handleNewsComment(news.id)}>
-                            <Send className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            {posts.length === 0 && (
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <p className="text-muted-foreground">No posts yet. Create your first post!</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
         {currentPage === "music" && (
-          <div className="max-w-6xl mx-auto">
-            <h2 className="text-2xl font-bold mb-6">Music Streaming</h2>
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Music</h2>
+              <Button onClick={() => setShowAddSong(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Upload Song
+              </Button>
+            </div>
 
-            {/* Music Player */}
+            {/* Current Playing Song */}
             {currentSong && (
-              <Card className="mb-6">
-                <CardContent className="p-6">
+              <Card>
+                <CardContent className="p-4">
                   <div className="flex items-center gap-4">
                     <img
                       src={currentSong.coverArt || "/placeholder.svg"}
@@ -1572,324 +1637,269 @@ export default function MzansiGossipClub() {
                       className="w-16 h-16 rounded-lg object-cover"
                     />
                     <div className="flex-1">
-                      <h3 className="font-bold">{currentSong.title}</h3>
-                      <p className="text-muted-foreground">{currentSong.artist}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm">
-                        <SkipBack className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={togglePlayPause}>
-                        {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        <SkipForward className="h-4 w-4" />
-                      </Button>
+                      <h3 className="font-semibold">{currentSong.title}</h3>
+                      <p className="text-sm text-muted-foreground">{currentSong.artist}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Button size="sm" onClick={togglePlayPause}>
+                          {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                        </Button>
+                        <div className="flex-1">
+                          <Slider
+                            value={[currentTime]}
+                            max={currentSong.duration}
+                            step={1}
+                            onValueChange={handleSeek}
+                            className="w-full"
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {formatTime(currentTime)} / {formatTime(currentSong.duration)}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Volume2 className="h-4 w-4" />
                       <Slider
                         value={[volume]}
-                        onValueChange={(value) => setVolume(value[0])}
                         max={100}
                         step={1}
+                        onValueChange={(value) => setVolume(value[0])}
                         className="w-20"
                       />
                     </div>
                   </div>
-                  <div className="mt-4">
-                    <Slider
-                      value={[currentTime]}
-                      onValueChange={handleSeek}
-                      max={currentSong.duration}
-                      step={1}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-sm text-muted-foreground mt-1">
-                      <span>{formatTime(currentTime)}</span>
-                      <span>{formatTime(currentSong.duration)}</span>
-                    </div>
-                  </div>
+                  <audio
+                    ref={audioRef}
+                    src={currentSong.audioUrl}
+                    onTimeUpdate={handleTimeUpdate}
+                    onEnded={() => setIsPlaying(false)}
+                  />
                 </CardContent>
               </Card>
             )}
 
-            {/* Songs Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {/* Songs List */}
+            <div className="grid gap-4">
               {songs.map((song) => (
-                <Card key={song.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                  <div className="relative">
-                    <img
-                      src={song.coverArt || "/placeholder.svg"}
-                      alt={song.title}
-                      className="w-full h-48 object-cover"
-                    />
-                    <Button className="absolute inset-0 m-auto h-12 w-12 rounded-full" onClick={() => playSong(song)}>
-                      <Play className="h-6 w-6" />
-                    </Button>
-                  </div>
+                <Card key={song.id}>
                   <CardContent className="p-4">
-                    <h3 className="font-bold mb-1 truncate">{song.title}</h3>
-                    <p className="text-sm text-muted-foreground mb-1 truncate">{song.artist}</p>
-                    <p className="text-xs text-muted-foreground mb-3">{song.genre}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">{formatTime(song.duration)}</span>
-                      <Button variant="ghost" size="sm" onClick={() => downloadSong(song)}>
-                        <Download className="h-4 w-4" />
-                      </Button>
+                    <div className="flex items-center gap-4">
+                      <img
+                        src={song.coverArt || "/placeholder.svg"}
+                        alt={song.title}
+                        className="w-12 h-12 rounded-lg object-cover"
+                      />
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{song.title}</h3>
+                        <p className="text-sm text-muted-foreground">{song.artist}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {song.album} • {song.genre}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">{formatTime(song.duration)}</span>
+                        <Button size="sm" onClick={() => playSong(song)}>
+                          <Play className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => handleShare({ ...song, id: song.id } as any)}>
+                          <Share className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={song.user.profilePic || "/placeholder.svg"} />
+                        <AvatarFallback>
+                          <UserIcon className="h-3 w-3" />
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm text-muted-foreground">Uploaded by {song.user.displayName}</span>
                     </div>
                   </CardContent>
                 </Card>
               ))}
+              {songs.length === 0 && (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <Music className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">No songs uploaded yet. Be the first to share your music!</p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
-
-            {/* Audio Element */}
-            {currentSong && (
-              <audio
-                ref={audioRef}
-                src={currentSong.audioUrl}
-                onTimeUpdate={handleTimeUpdate}
-                onEnded={() => setIsPlaying(false)}
-              />
-            )}
           </div>
         )}
-      </div>
 
-      {/* Beautiful Inbox Modal */}
-      {showInbox && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-96 h-[600px] flex flex-col">
-            <CardHeader className="border-b">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  Chats
-                </CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setShowInbox(false)}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="flex-1 p-0">
-              <ScrollArea className="h-full">
-                <div className="p-4 space-y-2">
-                  {allUsers
-                    .filter((u) => u.id !== user?.id)
-                    .map((chatUser) => (
-                      <div
-                        key={chatUser.id}
-                        className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
-                        onClick={() => startChat(chatUser)}
-                      >
-                        <div className="relative">
-                          <Avatar className="h-12 w-12">
-                            <AvatarImage src={chatUser.profilePic || "/placeholder.svg"} />
-                            <AvatarFallback>
-                              <UserIcon className="h-5 w-5" />
-                            </AvatarFallback>
-                          </Avatar>
-                          {chatUser.isOnline && (
-                            <div className="absolute -bottom-1 -right-1 h-4 w-4 bg-green-500 rounded-full border-2 border-white"></div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p className="font-semibold truncate">{chatUser.displayName}</p>
-                            {unreadMessages[chatUser.id] > 0 && (
-                              <Badge className="h-5 w-5 rounded-full p-0 text-xs">{unreadMessages[chatUser.id]}</Badge>
-                            )}
-                          </div>
+        {currentPage === "news" && (
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl font-bold mb-6">Latest News</h2>
+            <div className="grid gap-6">
+              <Card>
+                <CardContent className="p-6">
+                  <h3 className="text-xl font-semibold mb-2">Welcome to News Section</h3>
+                  <p className="text-muted-foreground">
+                    Stay updated with the latest news and updates from the community.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {currentPage === "videos" && (
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl font-bold mb-6">Videos</h2>
+            <div className="grid gap-6">
+              {posts
+                .filter((post) => post.mediaType === "video")
+                .map((post) => (
+                  <Card key={post.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3 mb-4">
+                        <Avatar>
+                          <AvatarImage src={post.user.profilePic || "/placeholder.svg"} />
+                          <AvatarFallback>
+                            <UserIcon className="h-4 w-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-semibold">{post.user.displayName}</p>
                           <p className="text-sm text-muted-foreground">
-                            {chatUser.isOnline ? "Active now" : "Offline"}
+                            {post.createdAt?.toLocaleDateString?.() || "Just now"}
                           </p>
                         </div>
                       </div>
-                    ))}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Chat Modal */}
-      {showChat && selectedChatUser && (
-        <div className="fixed bottom-4 right-4 w-80 h-96 bg-white border rounded-lg shadow-lg z-50">
-          <div className="flex items-center justify-between p-3 border-b bg-blue-50 rounded-t-lg">
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={selectedChatUser.profilePic || "/placeholder.svg"} />
-                  <AvatarFallback>
-                    <UserIcon className="h-3 w-3" />
-                  </AvatarFallback>
-                </Avatar>
-                {selectedChatUser.isOnline && (
-                  <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-green-500 rounded-full border-2 border-white"></div>
-                )}
-              </div>
-              <div>
-                <span className="font-semibold text-sm">{selectedChatUser.displayName}</span>
-                <p className="text-xs text-muted-foreground">{selectedChatUser.isOnline ? "Active now" : "Offline"}</p>
-              </div>
-            </div>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="sm">
-                <Phone className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm">
-                <VideoIcon className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowChat(false)}>
-                <X className="h-4 w-4" />
-              </Button>
+                      {post.caption && <p className="mb-4">{post.caption}</p>}
+                      <video controls className="w-full rounded-lg mb-4">
+                        <source src={post.mediaURL} />
+                      </video>
+                      <div className="flex items-center justify-between">
+                        <div className="flex gap-4">
+                          <Button variant="ghost" size="sm" onClick={() => handleReaction(post.id, "like")}>
+                            <Heart className="h-4 w-4 mr-2" />
+                            Like ({post.reactions.length})
+                          </Button>
+                          <Button variant="ghost" size="sm">
+                            <MessageCircle className="h-4 w-4 mr-2" />
+                            Comment ({post.comments.length})
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleShare(post)}>
+                            <Share className="h-4 w-4 mr-2" />
+                            Share
+                          </Button>
+                        </div>
+                        <span className="text-sm text-muted-foreground">{post.viewCount || 0} views</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              {posts.filter((post) => post.mediaType === "video").length === 0 && (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <Video className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">No videos uploaded yet. Share your first video!</p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
+        )}
 
-          <ScrollArea className="h-64 p-3">
-            <div className="space-y-3">
-              {chatMessages
-                .filter(
-                  (msg) =>
-                    (msg.fromUserId === user.id && msg.toUserId === selectedChatUser.id) ||
-                    (msg.fromUserId === selectedChatUser.id && msg.toUserId === user.id),
-                )
-                .map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex ${message.fromUserId === user.id ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-xs p-2 rounded-lg ${
-                        message.fromUserId === user.id
-                          ? "bg-blue-500 text-white rounded-br-none"
-                          : "bg-gray-100 rounded-bl-none"
-                      }`}
-                    >
-                      <p className="text-sm">{message.message}</p>
-                      <p className="text-xs opacity-70 mt-1">
-                        {message.createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        {currentPage === "profile" && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4 mb-6">
+                  <Avatar className="h-20 w-20">
+                    <AvatarImage src={user?.profilePic || "/placeholder.svg"} />
+                    <AvatarFallback>
+                      <UserIcon className="h-8 w-8" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <h2 className="text-2xl font-bold">{user?.displayName}</h2>
+                    <p className="text-muted-foreground">{user?.email}</p>
+                    {user?.bio && <p className="text-sm mt-2">{user.bio}</p>}
+                    {user?.interests && (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        <strong>Interests:</strong> {user.interests}
                       </p>
+                    )}
+                    <div className="flex items-center gap-4 mt-2">
+                      <Badge variant="secondary">{user?.isOnline ? "Online" : "Offline"}</Badge>
+                      <span className="text-sm text-muted-foreground">
+                        <Users className="h-4 w-4 inline mr-1" />
+                        {user?.friends?.length || 0} friends
+                      </span>
                     </div>
                   </div>
-                ))}
-            </div>
-          </ScrollArea>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setEditingProfile({
+                      displayName: user?.displayName || "",
+                      bio: user?.bio || "",
+                      interests: user?.interests || "",
+                      profilePic: "",
+                    })
+                    setShowProfileEdit(true)
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Profile
+                </Button>
+              </CardContent>
+            </Card>
 
-          <div className="p-3 border-t bg-gray-50 rounded-b-lg">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Type a message..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && sendMessage()}
-                className="flex-1"
-              />
-              <Button size="sm" onClick={sendMessage}>
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
+            {/* User's Posts */}
+            <Card>
+              <CardHeader>
+                <CardTitle>My Posts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {posts
+                    .filter((post) => post.userId === currentUser?.uid)
+                    .map((post) => (
+                      <div key={post.id} className="border rounded-lg p-4">
+                        {post.caption && <p className="mb-2">{post.caption}</p>}
+                        {post.mediaURL && (
+                          <div className="mb-2">
+                            {post.mediaType === "video" ? (
+                              <video controls className="w-full max-h-48 rounded">
+                                <source src={post.mediaURL} />
+                              </video>
+                            ) : (
+                              <img
+                                src={post.mediaURL || "/placeholder.svg"}
+                                alt="Post media"
+                                className="w-full max-h-48 object-cover rounded"
+                              />
+                            )}
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                          <span>{post.createdAt?.toLocaleDateString?.() || "Just now"}</span>
+                          <div className="flex gap-4">
+                            <span>{post.reactions.length} likes</span>
+                            <span>{post.comments.length} comments</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  {posts.filter((post) => post.userId === currentUser?.uid).length === 0 && (
+                    <p className="text-center text-muted-foreground py-8">You haven't posted anything yet.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </div>
-      )}
-
-      {/* Profile Edit Modal */}
-      {showProfileEdit && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-96">
-            <CardHeader>
-              <CardTitle>Edit Profile</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-center">
-                <Avatar className="h-20 w-20 mx-auto mb-4">
-                  <AvatarImage src={editingProfile.profilePic || user.profilePic || "/placeholder.svg"} />
-                  <AvatarFallback>
-                    <UserIcon className="h-8 w-8" />
-                  </AvatarFallback>
-                </Avatar>
-                <Button variant="outline" size="sm" onClick={() => profilePicInputRef.current?.click()}>
-                  Change Photo
-                </Button>
-                <input
-                  ref={profilePicInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleProfilePicUpload}
-                  className="hidden"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Display Name</label>
-                <Input
-                  value={editingProfile.displayName}
-                  onChange={(e) => setEditingProfile({ ...editingProfile, displayName: e.target.value })}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={handleProfileEdit} className="flex-1">
-                  Save Changes
-                </Button>
-                <Button variant="outline" onClick={() => setShowProfileEdit(false)} className="flex-1">
-                  Cancel
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* User Profile Modal */}
-      {showUserProfile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-96">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Profile</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setShowUserProfile(null)}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="text-center space-y-4">
-              <div className="relative">
-                <Avatar className="h-24 w-24 mx-auto">
-                  <AvatarImage src={showUserProfile.profilePic || "/placeholder.svg"} />
-                  <AvatarFallback>
-                    <UserIcon className="h-8 w-8" />
-                  </AvatarFallback>
-                </Avatar>
-                {showUserProfile.isOnline && (
-                  <div className="absolute bottom-2 right-1/2 transform translate-x-8 h-6 w-6 bg-green-500 rounded-full border-4 border-white"></div>
-                )}
-              </div>
-              <div>
-                <h3 className="text-xl font-bold">{showUserProfile.displayName}</h3>
-                <p className="text-muted-foreground">{showUserProfile.email}</p>
-                <p className="text-sm text-muted-foreground">{countMutualFriends(showUserProfile.id)} mutual friends</p>
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={() => startChat(showUserProfile)} className="flex-1">
-                  <MessageCircle className="h-4 w-4 mr-2" />
-                  Message
-                </Button>
-                <Button variant="outline" className="flex-1">
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add Friend
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Notification Toast */}
-      {notification && (
-        <div className="fixed bottom-4 left-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom">
-          {notification}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
+
+export default MzansiGossipClub
